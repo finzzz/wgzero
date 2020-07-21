@@ -1,4 +1,4 @@
-# simple_wireguard
+# S imple Wireguard
 Tested on Ubuntu 18.04. For other distributions, make sure [wireguard](https://www.wireguard.com/install/) and [qrencode](https://pkgs.org/download/qrencode) are installed before proceeding.
 
 ### 1. Clone this repo  
