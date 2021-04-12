@@ -1,0 +1,234 @@
+#! /bin/bash
+
+
+CONFIGFOLDER=".wgzero"
+WG0="/etc/wireguard/wg0.conf"
+
+Run(){
+    IsRoot
+    CheckPackages "iptables curl qrencode ipcalc"
+
+    case "$1" in
+    "install")
+        Install
+        ;;
+    "list")
+        PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
+        for i in $PUBKEYS
+        do
+            CLIENT=$(grep -r $i "$CONFIGFOLDER" | cut -d "/" -f 2)
+            IP=$(cat "$CONFIGFOLDER/$CLIENT/conf" | grep -i address | tr -d " " | cut -d "=" -f 2)
+            Print "$CLIENT $IP $i\n" "orange"
+        done
+        ;;
+    "add")
+        Add "$@"
+        ;;
+    "del")
+        PUBKEY=$(cat "$CONFIGFOLDER/$2/pub.key")
+
+        rm -rf "$CONFIGFOLDER/$2"
+
+        LINE=$(grep -m 1 -A 4 -n "# $2" "$WG0" | grep -oP '^[0-9]*')
+        F=$(echo "$LINE" | head -1)
+        L=$(echo "$LINE" | tail -1)
+        sed -ie "$F"",""$L""d" "$WG0"
+
+        wg set wg0 peer "$PUBKEY" remove
+        wg addconf wg0 <(wg-quick strip wg0)
+        ;;
+    "qr")
+        QR "$2"
+        ;;
+    *)
+        Print "Unknown command\n" "red"
+        ;;
+    esac
+}
+
+Print(){
+    RED='\033[1;31m'
+    GREEN='\033[0;32m'
+    ORANGE='\033[0;33m'
+    CYAN='\033[0;36m'
+    NC='\033[0m'
+
+    case "$2" in
+    "red")
+        echo -en "${RED}$1${NC}"
+        ;;
+    "cyan")
+        echo -en "${CYAN}$1${NC}"
+        ;;
+    "orange")
+        echo -en "${ORANGE}$1${NC}"
+        ;;
+    *)
+        echo -en "${GREEN}$1${NC}"
+        ;;
+    esac
+}
+
+WriteConfig(){
+    Print "$1 [$2]: " "orange"
+    read -r INPUT
+
+    if [[ "$INPUT" == "" ]]
+    then echo "$1=$2" >> "$CONFIGFOLDER/conf"
+    else echo "$1=$INPUT" >> "$CONFIGFOLDER/conf"
+    fi
+}
+
+IsRoot(){
+    [[ ! "$EUID" -eq 0 ]] && Print "Must be run as root\n" && exit 1
+}
+
+CheckPackage(){
+    if [[ ! $(command -v "$1") ]]
+    then Print "$2" && exit 1
+    fi
+}
+
+CheckPackages(){
+    CheckPackage "wg" "Please install wireguard https://www.wireguard.com/install/\n"
+
+    for i in $1
+    do CheckPackage "$i" "Please install $i\n"
+    done
+}
+
+SetInterface(){
+    INTERFACES=$(ip l | grep -oP ": (\K[0-9a-z]*)" | grep -v lo)
+    DEFAULT=$(echo "$INTERFACES" | head -1)
+
+    Print "Available interfaces :\n" "cyan"
+    echo "$INTERFACES"
+
+    WriteConfig "Interface" "$DEFAULT"
+}
+
+GetConf(){
+    grep -i "$1" "$CONFIGFOLDER/conf" | cut -d "=" -f 2
+}
+
+GenerateKeys(){
+    /usr/bin/wg genkey \
+    | tee "$1/priv.key" \
+    | /usr/bin/wg pubkey > "$1/pub.key"
+}
+
+Init(){
+    if [ -d "$CONFIGFOLDER" ]
+    then
+        Print "Config folder .wgzero already exists, do you want to overwrite [y/n]? " "red"
+        read -r INPUT
+        [ "$INPUT" == "y" ] && rm -rf "$CONFIGFOLDER" || exit 1
+    fi
+
+    mkdir "$CONFIGFOLDER"
+}
+
+Install(){
+    Print "Initializing\n"
+    Init
+    
+    Print "Writing configs\n"
+    WriteConfig "Server" "$(curl -s ip.me)"
+    WriteConfig "Port" "51820"
+    WriteConfig "Subnet" "10.10.0.1/24"
+    SetInterface
+
+    Print "Enable IP forward\n"
+    sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+    /usr/sbin/sysctl -p
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+
+    Print "Generate server key\n"
+    GenerateKeys "$CONFIGFOLDER"
+
+    Print "Generate config file\n"
+    cat >"$WG0" <<EOF
+[Interface]
+Address = $(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)/24
+SaveConfig = true
+PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
+ListenPort = $(GetConf port)
+PostUp = /usr/sbin/iptables -A FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -A FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -A POSTROUTING -o $(GetConf interface) -j MASQUERADE
+PostDown = /usr/sbin/iptables -D FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -D FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -D POSTROUTING -o $(GetConf interface) -j MASQUERADE"
+
+EOF
+
+    chown -v root:root "$WG0"
+    chmod -v 600 "$WG0"
+    
+    Print "Enable service\n"
+    wg-quick up wg0
+    systemctl enable wg-quick@wg0
+
+    Print "Done, make sure $(GetConf port)/UDP is open\n" "red"
+}
+
+SetClientIP(){
+    PREFIX=$(GetConf subnet | cut -d "." -f 1,2,3)
+    MIN=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | cut -d "." -f 4 | tr -d " ")
+    MAX=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmax | cut -d "." -f 4 | tr -d " ")
+
+    for i in $(seq "$MIN" "$MAX")
+    do
+        DEFAULT="$PREFIX.$i"
+        grep -q "$DEFAULT" $WG0 || break
+    done
+
+    Print "Choose client IP [$DEFAULT]: " "orange"
+    read -r INPUT
+
+    if [ "$INPUT" == "" ]
+    then CLIENT_IP="$DEFAULT"
+    else CLIENT_IP="$INPUT"
+    fi
+}
+
+QR(){
+    CFG="$CONFIGFOLDER/$1/conf"
+    [ ! -f "$CFG" ] && Print "Client doesn't exist\n" "red" && exit 1
+    /usr/bin/qrencode -t ansiutf8 < "$CFG"
+}
+
+Add(){
+    NAME="$2"
+
+    [[ ! "$NAME" ]] && exit 1
+    [[ -d "$CONFIGFOLDER/$NAME" ]] && Print "Client already exists\n" "red" && exit 1
+
+    mkdir "$CONFIGFOLDER/$NAME"
+    GenerateKeys "$CONFIGFOLDER/$NAME"
+
+    SetClientIP # return CLIENT_IP
+
+    cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
+[Interface]
+Address = $CLIENT_IP/32
+PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
+
+[Peer]
+PublicKey = $(cat "$CONFIGFOLDER/pub.key")
+Endpoint = $(GetConf server):$(GetConf port)
+AllowedIPs = 0.0.0.0/0
+EOF
+
+    cat >>"$WG0" <<EOF 
+# $NAME
+[Peer]
+PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
+AllowedIPs = $CLIENT_IP
+
+EOF
+
+    # apply new config
+    wg addconf wg0 <(wg-quick strip wg0)
+
+    # show config
+    QR "$NAME"
+}
+
+Run "$@"
