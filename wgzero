@@ -118,11 +118,17 @@ GenerateKeys(){
 }
 
 Init(){
-    if [ -d "$CONFIGFOLDER" ]
+    if [ -d "$CONFIGFOLDER" ] || [ -f "$WG0" ]
     then
         Print "Config folder .wgzero already exists, do you want to overwrite [y/n]? " "red"
         read -r INPUT
-        [ "$INPUT" == "y" ] && rm -rf "$CONFIGFOLDER" || exit 1
+        if [ "$INPUT" == "y" ]
+        then
+            rm -rf "$CONFIGFOLDER" "$WG0"
+            ip link del wg0 2>/dev/null
+        else
+            exit 1
+        fi
     fi
 
     mkdir "$CONFIGFOLDER"
