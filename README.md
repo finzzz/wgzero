@@ -29,7 +29,8 @@ wgzero qr clientname
 ```bash
 echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
 apt update && apt upgrade
-apt install linux-headers-amd64 wireguard qrencode ipcalc curl iptables
+apt install linux-headers-$(uname -r) wireguard qrencode ipcalc curl iptables
+# replace linux-headers-$(uname -r) with # replace linux-headers-amd64 if errors
 ```
 - Running alongside Pihole  
 Run `pihole restartdns` after setup
