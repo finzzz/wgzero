@@ -175,7 +175,7 @@ SaveConfig = true
 PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
 ListenPort = $(GetConf port)
 PostUp = /usr/sbin/iptables -A FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -A FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -A POSTROUTING -o $(GetConf interface) -j MASQUERADE
-PostDown = /usr/sbin/iptables -D FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -D FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -D POSTROUTING -o $(GetConf interface) -j MASQUERADE"
+PostDown = /usr/sbin/iptables -D FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -D FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -D POSTROUTING -o $(GetConf interface) -j MASQUERADE
 
 EOF
 
