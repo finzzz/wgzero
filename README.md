@@ -10,7 +10,7 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Installation
 ```bash
-curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
+curl -sO https://raw.githubusercontent.com/finzzz/wgzero/0.1/wgzero
 chmod +x wgzero
 ./wgzero install
 ```
