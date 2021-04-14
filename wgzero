@@ -7,20 +7,14 @@ IPv6Prefix="1337:c0d3::"
 
 Run(){
     IsRoot
-    CheckPackages "iptables curl qrencode ipcalc"
+    CheckPackages "wg iptables curl qrencode ipcalc"
 
     case "$1" in
     "install")
         Install
         ;;
     "list")
-        PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
-        for i in $PUBKEYS
-        do
-            CLIENT=$(grep -r $i "$CONFIGFOLDER" | cut -d "/" -f 2)
-            IP=$(cat "$CONFIGFOLDER/$CLIENT/conf" | grep -i address | tr -d " " | cut -d "=" -f 2)
-            Print "$CLIENT $IP $i\n" "orange"
-        done
+        List
         ;;
     "add")
         Add "$@"
@@ -60,31 +54,37 @@ Print(){
     esac
 }
 
-WriteConfig(){
-    Print "$1 [$2]: " "orange"
+Read(){
     read -r INPUT
-
     if [[ "$INPUT" == "" ]]
-    then echo "$1=$2" >> "$CONFIGFOLDER/conf"
-    else echo "$1=$INPUT" >> "$CONFIGFOLDER/conf"
+    then VAL="$1"
+    else VAL="$INPUT"
     fi
 }
 
-IsRoot(){
-    [[ ! "$EUID" -eq 0 ]] && Print "Must be run as root\n" && exit 1
+WriteConfig(){
+    Print "$1 [$2]: " "orange"
+
+    Read "$2"
+    echo "$1=$VAL" >> "$CONFIGFOLDER/conf"
 }
 
-CheckPackage(){
-    if [[ ! $(command -v "$1") ]]
-    then Print "$2" && exit 1
+IsRoot(){
+    if [[ ! "$EUID" -eq 0 ]]
+    then
+        Print "Must be run as root\n" "red"
+        exit 1
     fi
 }
 
 CheckPackages(){
-    CheckPackage "wg" "Please install wireguard https://www.wireguard.com/install/\n"
-
     for i in $1
-    do CheckPackage "$i" "Please install $i\n"
+    do 
+        if [[ ! $(command -v "$i") ]]
+        then
+            Print "$i: command not found, please check required packages.\n" "red"
+            exit 1
+        fi
     done
 }
 
@@ -125,6 +125,19 @@ Init(){
     mkdir "$CONFIGFOLDER"
 }
 
+EnableIPForward(){
+    sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
+    then
+        sed -i 's/\#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' /etc/sysctl.conf
+        echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+    fi
+    
+    /usr/sbin/sysctl -p
+}
+
 Install(){
     Print "Initializing\n"
     Init
@@ -136,41 +149,22 @@ Install(){
 
     Print "Enable IPv6 [y/n]? " "orange"
     read -r INPUT
-    if [ "$INPUT" == "y" ]
-    then
-        echo "IPv6Prefix=$IPv6Prefix" >> "$CONFIGFOLDER/conf"
-    fi
+    [ "$INPUT" == "y" ] && echo "IPv6Prefix=$IPv6Prefix" >> "$CONFIGFOLDER/conf"
 
     SetInterface
 
     Print "Enable IP forward\n"
-    sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
-        sed -i 's/\#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' /etc/sysctl.conf
-        echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
-    fi
-    
-    /usr/sbin/sysctl -p
+    EnableIPForward
 
-    Print "Generate server key\n"
+    Print "Generate server keys\n"
     GenerateKeys "$CONFIGFOLDER"
 
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
-        IPv6Suffix=$(echo "$IPv4Addr" | cut -d "." -f 4)
-        IPv6Addr=", $IPv6Prefix$(printf '%x' $IPv6Suffix)/120"
-        APPEND=", ::/0"
-    fi
-
     cat >"$WG0" <<EOF
 [Interface]
-Address = $IPv4Addr/24$IPv6Addr
+Address = $IPv4Addr/24
 SaveConfig = true
 PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
 ListenPort = $(GetConf port)
@@ -179,7 +173,13 @@ PostDown = /usr/sbin/iptables -D FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -D 
 
 EOF
 
-    chown -v root:root "$WG0"
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
+    then
+        IPv6Suffix=$(echo "$IPv4Addr" | cut -d "." -f 4 | xargs printf "%x")
+        IPv6Addr="$IPv6Prefix$IPv6Suffix/120"
+        sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
+    fi
+
     chmod -v 600 "$WG0"
     
     Print "Enable service\n"
@@ -201,18 +201,24 @@ SetClientIP(){
     done
 
     Print "Choose client IP [$DEFAULT]: " "orange"
-    read -r INPUT
-
-    if [ "$INPUT" == "" ]
-    then CLIENT_IP="$DEFAULT"
-    else CLIENT_IP="$INPUT"
-    fi
+    Read "$DEFAULT"
+    CLIENT_IP="$VAL"
 }
 
 QR(){
     CFG="$CONFIGFOLDER/$1/conf"
     [ ! -f "$CFG" ] && Print "Client doesn't exist\n" "red" && exit 1
     /usr/bin/qrencode -t ansiutf8 < "$CFG"
+}
+
+List(){
+    PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
+    for i in $PUBKEYS
+    do
+        CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
+        IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | tr -d " " | cut -d "=" -f 2)
+        Print "$CLIENT $IP $i\n" "orange"
+    done
 }
 
 Add(){
@@ -226,51 +232,61 @@ Add(){
 
     SetClientIP # return CLIENT_IP
 
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
-        IPv6Suffix=$(echo "$CLIENT_IP" | cut -d "." -f 4)
-        IPv6Addr=", $IPv6Prefix$(printf '%x' $IPv6Suffix)/128"
-        APPEND=", ::/0"
-    fi
+    # writing configs
+    TMP=$(mktemp)
 
     cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
+    # cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
 [Interface]
-Address = $CLIENT_IP/32$IPv6Addr
+Address = $CLIENT_IP/32
 PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
 
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/pub.key")
 Endpoint = $(GetConf server):$(GetConf port)
-AllowedIPs = 0.0.0.0/0$APPEND
+AllowedIPs = 0.0.0.0/0
 EOF
 
-    cat >>"$WG0" <<EOF 
+    cat >>"$TMP" <<EOF 
 # $NAME
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
-AllowedIPs = $CLIENT_IP$IPv6Addr
+AllowedIPs = $CLIENT_IP
 
 EOF
 
+    # handle IPv6
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
+    then
+        IPv6Suffix=$(echo "$CLIENT_IP" | cut -d "." -f 4 | xargs printf "%x")
+        IPv6Addr="$IPv6Prefix$IPv6Suffix/128"
+
+        sed -i -e "s|^Address.*$|&, $IPv6Addr|g" \
+        -e "s|^AllowedIPs.*$|&, ::/0|g" \
+        "$CONFIGFOLDER/$NAME/conf"
+
+        sed -i "s|^AllowedIPs.*$|&, $IPv6Addr|g" "$TMP"
+    fi
+
     # apply new config
+    cat "$TMP" >> "$WG0" && rm -rf "$TMP"
     wg addconf wg0 <(wg-quick strip wg0)
 
-    # show config
+    # show qr
     QR "$NAME"
 }
 
 Del(){
-    if [ -d "$CONFIGFOLDER/$2" ]
+    CFG="$CONFIGFOLDER/$2"
+    if [ -d "$CFG" ]
     then
-        PUBKEY=$(cat "$CONFIGFOLDER/$2/pub.key")
-        rm -rf "$CONFIGFOLDER/$2"
-        LINE=$(grep -m 1 -A 4 -n "# $2" "$WG0" | grep -oP '^[0-9]*')
-        F=$(echo "$LINE" | head -1)
-        L=$(echo "$LINE" | tail -1)
-        sed -ie "$F"",""$L""d" "$WG0"
+        ENTRY=$(grep -m 1 -n "# $2" "$WG0" | cut -d ":" -f 1)
+        sed -ie "$ENTRY,$((ENTRY + 4))d" "$WG0"
 
-        wg set wg0 peer "$PUBKEY" remove
+        wg set wg0 peer "$(cat "$CFG/pub.key")" remove
         wg addconf wg0 <(wg-quick strip wg0)
+
+        rm -rf "$CFG"
     else
         Print "Client doesn't exist\n" "red"
     fi
