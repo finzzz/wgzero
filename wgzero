@@ -26,17 +26,7 @@ Run(){
         Add "$@"
         ;;
     "del")
-        PUBKEY=$(cat "$CONFIGFOLDER/$2/pub.key")
-
-        rm -rf "$CONFIGFOLDER/$2"
-
-        LINE=$(grep -m 1 -A 4 -n "# $2" "$WG0" | grep -oP '^[0-9]*')
-        F=$(echo "$LINE" | head -1)
-        L=$(echo "$LINE" | tail -1)
-        sed -ie "$F"",""$L""d" "$WG0"
-
-        wg set wg0 peer "$PUBKEY" remove
-        wg addconf wg0 <(wg-quick strip wg0)
+        Del "$@"
         ;;
     "qr")
         QR "$2"
@@ -267,6 +257,23 @@ EOF
 
     # show config
     QR "$NAME"
+}
+
+Del(){
+    if [ -d "$CONFIGFOLDER/$2" ]
+    then
+        PUBKEY=$(cat "$CONFIGFOLDER/$2/pub.key")
+        rm -rf "$CONFIGFOLDER/$2"
+        LINE=$(grep -m 1 -A 4 -n "# $2" "$WG0" | grep -oP '^[0-9]*')
+        F=$(echo "$LINE" | head -1)
+        L=$(echo "$LINE" | tail -1)
+        sed -ie "$F"",""$L""d" "$WG0"
+
+        wg set wg0 peer "$PUBKEY" remove
+        wg addconf wg0 <(wg-quick strip wg0)
+    else
+        Print "Client doesn't exist\n" "red"
+    fi
 }
 
 Run "$@"
