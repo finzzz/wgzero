@@ -3,6 +3,7 @@
 
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
+IPv6Subnet="1337:c0d3::1/120"
 
 Run(){
     IsRoot
@@ -142,20 +143,41 @@ Install(){
     WriteConfig "Server" "$(curl -s ip.me)"
     WriteConfig "Port" "51820"
     WriteConfig "Subnet" "10.10.0.1/24"
+
+    Print "Enable IPv6 [y/n]? " "orange"
+    read -r INPUT
+    if [ "$INPUT" == "y" ]
+    then
+        WriteConfig "IPv6Subnet" "$IPv6Subnet"
+    fi
+
     SetInterface
 
     Print "Enable IP forward\n"
     sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-    /usr/sbin/sysctl -p
     echo 1 > /proc/sys/net/ipv4/ip_forward
+    
+    grep -q "IPv6Subnet" "$CONFIGFOLDER/conf" 
+    && sed -i 's/\#net.IPv6.conf.all.forwarding=1/net.IPv6.conf.all.forwarding=1/' /etc/sysctl.conf
+    && echo 1 > /proc/sys/net/IPv6/conf/all/forwarding
+    
+    /usr/sbin/sysctl -p
 
     Print "Generate server key\n"
     GenerateKeys "$CONFIGFOLDER"
 
     Print "Generate config file\n"
+    IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
+
+    if grep -q "IPv6Subnet" "$CONFIGFOLDER/conf"
+    then
+        IPv6Addr=", 1337:c0d3::$(printf '%x' $IPv4Addr)/120"
+        APPEND=", ::/0"
+    fi
+
     cat >"$WG0" <<EOF
 [Interface]
-Address = $(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)/24
+Address = "$IPv4Addr"/24"$IPv6Addr"
 SaveConfig = true
 PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
 ListenPort = $(GetConf port)
@@ -211,22 +233,28 @@ Add(){
 
     SetClientIP # return CLIENT_IP
 
+    if grep -q "IPv6Subnet" "$CONFIGFOLDER/conf"
+    then
+        IPv6Addr=", 1337:c0d3::$(printf '%x' $CLIENT_IP)"
+        APPEND=",::/0"
+    fi
+
     cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
 [Interface]
-Address = $CLIENT_IP/32
+Address = $CLIENT_IP/32$IPv6Addr/128
 PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
 
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/pub.key")
 Endpoint = $(GetConf server):$(GetConf port)
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 0.0.0.0/0"$APPEND"
 EOF
 
     cat >>"$WG0" <<EOF 
 # $NAME
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
-AllowedIPs = $CLIENT_IP
+AllowedIPs = $CLIENT_IP$IPv6Addr
 
 EOF
 
