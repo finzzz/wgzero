@@ -10,7 +10,9 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Installation
 ```bash
-curl -sO https://raw.githubusercontent.com/finzzz/wgzero/0.1/wgzero
+curl -sO https://raw.githubusercontent.com/finzzz/wgzero/0.1/wgzero     # stable version
+curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero  # latest version
+
 chmod +x wgzero
 ./wgzero install
 ```
@@ -20,13 +22,14 @@ chmod +x wgzero
 
 # Other Commands
 ```
+wgzero list
 wgzero add clientname
 wgzero del clientname
-wgzero list
 wgzero qr clientname
 ```
-![](screenshots/add.png)
 ![](screenshots/list.png)
+![](screenshots/add.png)
+![](screenshots/advanced_config.png)
 
 
 # Troubleshoot
