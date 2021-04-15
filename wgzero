@@ -5,6 +5,12 @@ CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
 IPv6Prefix="1337:c0d3::"
 
+RED=$'\033[1;31m'
+GREEN=$'\033[0;32m'
+ORANGE=$'\033[0;33m'
+CYAN=$'\033[0;36m'
+NC=$'\033[0m'
+
 Run(){
     IsRoot
     CheckPackages "wg iptables curl qrencode ipcalc"
@@ -32,12 +38,6 @@ Run(){
 }
 
 Print(){
-    RED='\033[1;31m'
-    GREEN='\033[0;32m'
-    ORANGE='\033[0;33m'
-    CYAN='\033[0;36m'
-    NC='\033[0m'
-
     case "$2" in
     "red")
         echo -en "${RED}$1${NC}"
@@ -55,17 +55,12 @@ Print(){
 }
 
 Read(){
-    read -r INPUT
-    if [[ "$INPUT" == "" ]]
-    then VAL="$1"
-    else VAL="$INPUT"
-    fi
+    read -rp "${ORANGE}$1 [$2]: ${NC}" VAL
+    VAL=${VAL:-"$2"}
 }
 
 WriteConfig(){
-    Print "$1 [$2]: " "orange"
-
-    Read "$2"
+    Read "$1" "$2"
     echo "$1=$VAL" >> "$CONFIGFOLDER/conf"
 }
 
@@ -111,9 +106,8 @@ GenerateKeys(){
 Init(){
     if [ -d "$CONFIGFOLDER" ] || [ -f "$WG0" ]
     then
-        Print "Config folder .wgzero already exists, do you want to overwrite [y/n]? " "red"
-        read -r CLEANUP
-        if [ "$CLEANUP" == "y" ]
+        Read "Config folder .wgzero already exists, do you want to overwrite" "y/N"
+        if [ "$VAL" == "y" ]
         then
             rm -rf "$CONFIGFOLDER" "$WG0"
             ip link del wg0 2>/dev/null
@@ -147,9 +141,8 @@ Install(){
     WriteConfig "Port" "51820"
     WriteConfig "Subnet" "10.10.0.1/24"
 
-    Print "Enable IPv6 [y/n]? " "orange"
-    read -r INPUT
-    [ "$INPUT" == "y" ] && echo "IPv6Prefix=$IPv6Prefix" >> "$CONFIGFOLDER/conf"
+    Read "Enable IPv6" "Y/n"
+    [ "$VAL" != "n" ] && echo "IPv6Prefix=$IPv6Prefix" >> "$CONFIGFOLDER/conf"
 
     SetInterface
 
@@ -200,14 +193,14 @@ SetClientIP(){
         grep -q "$DEFAULT" $WG0 || break
     done
 
-    Print "Choose client IP [$DEFAULT]: " "orange"
-    Read "$DEFAULT"
-    CLIENT_IP="$VAL"
+    Read "Choose client IP" "$DEFAULT"
 }
 
 QR(){
     CFG="$CONFIGFOLDER/$1/conf"
     [ ! -f "$CFG" ] && Print "Client doesn't exist\n" "red" && exit 1
+
+    Print "\n$CFG\n" "red"
     /usr/bin/qrencode -t ansiutf8 < "$CFG"
 }
 
@@ -230,29 +223,38 @@ Add(){
     mkdir "$CONFIGFOLDER/$NAME"
     GenerateKeys "$CONFIGFOLDER/$NAME"
 
-    SetClientIP # return CLIENT_IP
+    SetClientIP # return VAL
+    CLIENT_IP="$VAL"
 
-    # writing configs
+    # appending server config
     TMP=$(mktemp)
-
-    cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
-    # cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
-[Interface]
-Address = $CLIENT_IP/32
-PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
-
-[Peer]
-PublicKey = $(cat "$CONFIGFOLDER/pub.key")
-Endpoint = $(GetConf server):$(GetConf port)
-AllowedIPs = 0.0.0.0/0
-EOF
-
     cat >>"$TMP" <<EOF 
 # $NAME
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
 AllowedIPs = $CLIENT_IP
 
+EOF
+
+    # generate client config
+    cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
+[Interface]
+Address = $CLIENT_IP/32
+PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
+EOF
+
+    Read "DNS" "none"
+    [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
+
+    PUBKEY=$(cat "$CONFIGFOLDER/pub.key")
+    ENDPOINT="$(GetConf server):$(GetConf port)"
+
+    cat >>"$CONFIGFOLDER/$NAME/conf" <<EOF
+
+[Peer]
+PublicKey = $PUBKEY
+Endpoint = $ENDPOINT
+AllowedIPs = 0.0.0.0/0
 EOF
 
     # handle IPv6
@@ -266,6 +268,15 @@ EOF
         "$CONFIGFOLDER/$NAME/conf"
 
         sed -i "s|^AllowedIPs.*$|&, $IPv6Addr|g" "$TMP"
+    fi
+
+    # advanced config
+    Read "Edit allowed IPs?" "y/N"
+    if [ "$VAL" == "y" ]
+    then
+        ALLOWEDIPS=$(grep -i allowedips "$CONFIGFOLDER/$NAME/conf" | tr -d " " | cut -d "=" -f 2)
+        Read "Allowed IPs" "$ALLOWEDIPS"
+        [ "$VAL" != "$ALLOWEDIPS" ] && sed -i "s|AllowedIPs = .*|AllowedIPs = $VAL|g" "$CONFIGFOLDER/$NAME/conf"
     fi
 
     # apply new config
