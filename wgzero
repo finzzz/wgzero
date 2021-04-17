@@ -4,6 +4,7 @@
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
 IPv6Prefix="1337:c0d3::"
+SERVERPRIVKEY=""
 
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
@@ -98,9 +99,16 @@ GetConf(){
 }
 
 GenerateKeys(){
-    /usr/bin/wg genkey \
-    | tee "$1/priv.key" \
-    | /usr/bin/wg pubkey > "$1/pub.key"
+    if [ -z "$2" ]
+    then
+        /usr/bin/wg genkey \
+        | tee "$1/priv.key" \
+        | /usr/bin/wg pubkey > "$1/pub.key"
+    else
+        echo $2 \
+        | tee "$1/priv.key" \
+        | /usr/bin/wg pubkey > "$1/pub.key"
+    fi
 }
 
 Init(){
@@ -150,7 +158,7 @@ Install(){
     EnableIPForward
 
     Print "Generate server keys\n"
-    GenerateKeys "$CONFIGFOLDER"
+    GenerateKeys "$CONFIGFOLDER" "$SERVERPRIVKEY"
 
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
