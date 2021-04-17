@@ -97,8 +97,12 @@ GetConf(){
     grep -i "$1" "$CONFIGFOLDER/conf" | cut -d "=" -f 2
 }
 
-GenerateKeys(){
-    /usr/bin/wg genkey \
+GeneratePrivateKey(){
+    PRIVKEY=$(/usr/bin/wg genkey)
+}
+
+GeneratePublicKey(){
+    echo "$2" \
     | tee "$1/priv.key" \
     | /usr/bin/wg pubkey > "$1/pub.key"
 }
@@ -150,7 +154,11 @@ Install(){
     EnableIPForward
 
     Print "Generate server keys\n"
-    GenerateKeys "$CONFIGFOLDER"
+    GeneratePrivateKey
+
+    Read "Specify private key" "none"
+    [ "$VAL" != "none" ] && PRIVKEY="$VAL"
+    GeneratePublicKey "$CONFIGFOLDER" "$PRIVKEY"
 
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
@@ -221,7 +229,8 @@ Add(){
     [[ -d "$CONFIGFOLDER/$NAME" ]] && Print "Client already exists\n" "red" && exit 1
 
     mkdir "$CONFIGFOLDER/$NAME"
-    GenerateKeys "$CONFIGFOLDER/$NAME"
+    GeneratePrivateKey
+    GeneratePublicKey "$CONFIGFOLDER/$NAME" "$PRIVKEY"
 
     SetClientIP # return VAL
     CLIENT_IP="$VAL"
