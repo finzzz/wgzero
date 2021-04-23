@@ -3,7 +3,7 @@
 
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
-IPv6Prefix="1337:c0d3::"
+IPv6Prefix="fd00::"
 
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
@@ -13,7 +13,7 @@ NC=$'\033[0m'
 
 Run(){
     IsRoot
-    CheckPackages "wg iptables curl qrencode ipcalc"
+    CheckPackages "wg iptables curl qrencode ipcalc jq"
 
     case "$1" in
     "install")
@@ -84,7 +84,7 @@ CheckPackages(){
 }
 
 SetInterface(){
-    INTERFACES=$(ip l | grep -oP ": (\K[0-9a-z]*)" | grep -v lo)
+    INTERFACES=$(ip -json l | jq -r '.[]|.ifname' | grep -v lo)
     DEFAULT=$(echo "$INTERFACES" | head -1)
 
     Print "Available interfaces :\n" "cyan"
@@ -163,22 +163,25 @@ Install(){
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
+    IFACE=$(GetConf interface)
     cat >"$WG0" <<EOF
 [Interface]
 Address = $IPv4Addr/24
 SaveConfig = true
 PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
 ListenPort = $(GetConf port)
-PostUp = /usr/sbin/iptables -A FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -A FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -A POSTROUTING -o $(GetConf interface) -j MASQUERADE
-PostDown = /usr/sbin/iptables -D FORWARD -i %i -j ACCEPT; /usr/sbin/iptables -D FORWARD -o %i -j ACCEPT; /usr/sbin/iptables -t nat -D POSTROUTING -o $(GetConf interface) -j MASQUERADE
+PostUp = /usr/sbin/iptables -t nat -A POSTROUTING -o $IFACE -j MASQUERADE;
+PostDown = /usr/sbin/iptables -t nat -D POSTROUTING -o $IFACE -j MASQUERADE;
 
 EOF
 
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
     then
-        IPv6Suffix=$(echo "$IPv4Addr" | cut -d "." -f 4 | xargs printf "%x")
-        IPv6Addr="$IPv6Prefix$IPv6Suffix/120"
+        4to6 "$IPv4Addr"
+        IPv6Addr="$IPv6Prefix$VAL/64"
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
+        sed -i "s#^PostUp.*#& /usr/sbin/ip6tables -t nat -A POSTROUTING -o $IFACE -j MASQUERADE#g" "$WG0"
+        sed -i "s#^PostDown.*#& /usr/sbin/ip6tables -t nat -D POSTROUTING -o $IFACE -j MASQUERADE#g" "$WG0"
     fi
 
     chmod -v 600 "$WG0"
@@ -202,6 +205,10 @@ SetClientIP(){
     done
 
     Read "Choose client IP" "$DEFAULT"
+}
+
+4to6(){
+    VAL=$(echo "$1" | sed "s/\./:/g")
 }
 
 QR(){
@@ -267,13 +274,14 @@ AllowedIPs = 0.0.0.0/0
 EOF
 
     # handle IPv6
+    # ULA
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
     then
-        IPv6Suffix=$(echo "$CLIENT_IP" | cut -d "." -f 4 | xargs printf "%x")
-        IPv6Addr="$IPv6Prefix$IPv6Suffix/128"
+        4to6 "$CLIENT_IP"
+        IPv6Addr="$IPv6Prefix$VAL/128"
 
         sed -i -e "s|^Address.*$|&, $IPv6Addr|g" \
-        -e "s|^AllowedIPs.*$|&, ::/0|g" \
+        -e "s|^AllowedIPs.*$|&, $IPv6Prefix/64|g" \
         "$CONFIGFOLDER/$NAME/conf"
 
         sed -i "s|^AllowedIPs.*$|&, $IPv6Addr|g" "$TMP"
