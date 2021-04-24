@@ -1,9 +1,7 @@
-#! /bin/bash
-
+#! /usr/bin/env bash
 
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
-IPv6Prefix="fd00::"
 
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
@@ -40,17 +38,13 @@ Run(){
 Print(){
     case "$2" in
     "red")
-        echo -en "${RED}$1${NC}"
-        ;;
+        echo -en "${RED}$1${NC}";;
     "cyan")
-        echo -en "${CYAN}$1${NC}"
-        ;;
+        echo -en "${CYAN}$1${NC}";;
     "orange")
-        echo -en "${ORANGE}$1${NC}"
-        ;;
+        echo -en "${ORANGE}$1${NC}";;
     *)
-        echo -en "${GREEN}$1${NC}"
-        ;;
+        echo -en "${GREEN}$1${NC}";;
     esac
 }
 
@@ -121,6 +115,41 @@ Init(){
     fi
 
     mkdir "$CONFIGFOLDER"
+
+    # Generate scripts
+    cat > "$CONFIGFOLDER/postup.sh" << EOF
+#! /usr/bin/env bash
+
+# ipv4
+/usr/sbin/iptables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
+
+# ipv6
+if [ "\$1" == "NAT" ]
+then
+    /usr/sbin/ip6tables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
+elif [ "\$1" == "SLAAC" ]
+then
+    /usr/sbin/ip6tables -A FORWARD -i wg0 -j ACCEPT
+fi
+EOF
+
+    cat > "$CONFIGFOLDER/postdown.sh" << EOF
+#! /usr/bin/env bash
+
+# ipv4
+/usr/sbin/iptables -t nat -D POSTROUTING -o IFACE -j MASQUERADE
+
+# ipv6
+if [ "\$1" == "NAT" ]
+then
+    /usr/sbin/ip6tables -t nat -D POSTROUTING -o IFACE -j MASQUERADE
+elif [ "\$1" == "SLAAC" ]
+then
+    /usr/sbin/ip6tables -D FORWARD -i wg0 -j ACCEPT
+fi
+EOF
+
+    chmod +x "$CONFIGFOLDER"/post{up,down}.sh
 }
 
 EnableIPForward(){
@@ -141,14 +170,36 @@ Install(){
     Init
     
     Print "Writing configs\n"
+
+    SetInterface
+    IFACE=$(GetConf interface)
+    sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
+
     WriteConfig "Server" "$(curl -s ip.me)"
     WriteConfig "Port" "51820"
     WriteConfig "Subnet" "10.10.0.1/24"
 
-    Read "Enable IPv6" "Y/n"
-    [ "$VAL" != "n" ] && echo "IPv6Prefix=$IPv6Prefix" >> "$CONFIGFOLDER/conf"
+    TYPE="IPv4"
+    Read "Enable IPv6" "y/N"
+    if [ "$VAL" == "y" ]
+    then
+        TYPE="NAT"
+        IPv6Prefix="fd00::"
 
-    SetInterface
+        Print "External routing: \n" "orange"
+        Print "[1] NAT\n" "cyan"
+        Print "[2] SLAAC\n" "cyan"
+        Read "Selection" "1"
+
+        echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
+        if [ "$VAL" == "2" ]
+        then
+            IPv6Prefix=$(ip -json -6 a | jq -r '.[]|select(.ifname=="'"$IFACE"'")|.addr_info|.[]|select(.scope=="global")|.local')
+            TYPE="SLAAC"
+        fi
+        Read "IPv6 Prefix" "$IPv6Prefix"
+        echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
+    fi
 
     Print "Enable IP forward\n"
     EnableIPForward
@@ -163,25 +214,22 @@ Install(){
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
-    IFACE=$(GetConf interface)
     cat >"$WG0" <<EOF
 [Interface]
 Address = $IPv4Addr/24
-SaveConfig = true
+SaveConfig = false
 PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
 ListenPort = $(GetConf port)
-PostUp = /usr/sbin/iptables -t nat -A POSTROUTING -o $IFACE -j MASQUERADE;
-PostDown = /usr/sbin/iptables -t nat -D POSTROUTING -o $IFACE -j MASQUERADE;
+PostUp = $(pwd)/$CONFIGFOLDER/postup.sh $TYPE
+PostDown = $(pwd)/$CONFIGFOLDER/postdown.sh $TYPE
 
 EOF
 
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
     then
         4to6 "$IPv4Addr"
-        IPv6Addr="$IPv6Prefix$VAL/64"
+        IPv6Addr="$(GetConf IPv6Prefix)$VAL/64"
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
-        sed -i "s#^PostUp.*#& /usr/sbin/ip6tables -t nat -A POSTROUTING -o $IFACE -j MASQUERADE#g" "$WG0"
-        sed -i "s#^PostDown.*#& /usr/sbin/ip6tables -t nat -D POSTROUTING -o $IFACE -j MASQUERADE#g" "$WG0"
     fi
 
     chmod -v 600 "$WG0"
@@ -208,7 +256,7 @@ SetClientIP(){
 }
 
 4to6(){
-    VAL=$(echo "$1" | sed "s/\./:/g")
+    VAL=$(echo "$1" | cut -d "." -f 4 | xargs printf "%x")
 }
 
 QR(){
@@ -248,7 +296,7 @@ Add(){
 # $NAME
 [Peer]
 PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
-AllowedIPs = $CLIENT_IP
+AllowedIPs = $CLIENT_IP/32
 
 EOF
 
@@ -274,17 +322,18 @@ AllowedIPs = 0.0.0.0/0
 EOF
 
     # handle IPv6
-    # ULA
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
     then
         4to6 "$CLIENT_IP"
-        IPv6Addr="$IPv6Prefix$VAL/128"
+        IPv6Addr="$(GetConf IPv6Prefix)$VAL"
 
-        sed -i -e "s|^Address.*$|&, $IPv6Addr|g" \
-        -e "s|^AllowedIPs.*$|&, $IPv6Prefix/64|g" \
+        sed -i -e "s|^Address.*$|&, $IPv6Addr/64|g" \
+        -e "s|^AllowedIPs.*$|&, ::/0|g" \
         "$CONFIGFOLDER/$NAME/conf"
 
-        sed -i "s|^AllowedIPs.*$|&, $IPv6Addr|g" "$TMP"
+        sed -i "s|^AllowedIPs.*$|&, $IPv6Addr/128|g" "$TMP"
+
+        [ "$(GetConf ExternalRouting)" == "2" ] && ip -6 route add "$IPv6Addr/128" dev wg0
     fi
 
     # advanced config
@@ -313,6 +362,12 @@ Del(){
 
         wg set wg0 peer "$(cat "$CFG/pub.key")" remove
         wg addconf wg0 <(wg-quick strip wg0)
+
+        if [ "$(GetConf ExternalRouting)" == "2" ]
+        then
+            IPv6Addr=$(echo "$ENTRY" | grep -i "allowedips" | cut -d "," -f 2 | tr -d " ")
+            ip -6 route del "$IPv6Addr" dev wg0
+        fi
 
         rm -rf "$CFG"
     else
