@@ -3,6 +3,7 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Table of contents
 - [Requirements](#requirements)
+    - [Packages](#Packages)
     - [IPv6](#ipv6)
         - [NAT](#nat)
         - [Full Routing](#Full-Routing)
@@ -11,12 +12,8 @@ Zero overhead wireguard setup. Tested on Debian 10.
 - [FAQ, troubleshoot, etc.](#faq--troubleshoot--etc)
 
 # Requirements
-- [wireguard](https://www.wireguard.com/install/)
-- curl
-- qrencode
-- iptables
-- ipcalc
-- jq
+## Packages
+[wireguard](https://www.wireguard.com/install/) curl qrencode iptables ipcalc jq
 
 ## IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
@@ -25,7 +22,7 @@ There are 2 types of connection:
 ### NAT
 - public IPv6 is being shared, and internal IPv6 uses ULA (Unique Local Address)
 - you need to have IPv6 address similar to `2001::a:b:c:d/64`
-![](static/nat.jpg)
+<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
 
 ### Full Routing
 - assign public IPv6 to each clients
@@ -34,7 +31,7 @@ There are 2 types of connection:
     - not every providers provide this, some require opening a ticket (linode provides this)
 - **make sure you don't assign those IP addresses to any interfaces**
 
-![](static/fr.jpg)
+<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
 
 
 # Installation
@@ -45,7 +42,7 @@ chmod +x wgzero
 ./wgzero install
 ```
 
-![](static/install.png)
+<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/install.png" width="700" height="500">
 
 # Other Commands
 ```
