@@ -3,6 +3,7 @@
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
 IPv6Prefix="fd00::"
+TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
 
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
@@ -16,23 +17,17 @@ Run(){
 
     case "$1" in
     "install")
-        Install
-        ;;
+        Install ;;
     "list")
-        List
-        ;;
+        List ;;
     "add")
-        Add "$@"
-        ;;
+        Add "$@" ;;
     "del")
-        Del "$@"
-        ;;
+        Del "$@" ;;
     "qr")
-        QR "$2"
-        ;;
+        QR "$2" ;;
     *)
-        Print "Unknown command\n" "red"
-        ;;
+        Print "Unknown command\n" "red" ;;
     esac
 }
 
@@ -61,17 +56,14 @@ WriteConfig(){
 
 IsRoot(){
     if [[ ! "$EUID" -eq 0 ]]; then
-        Print "Must be run as root\n" "red"
-        exit 1
+        Print "Must be run as root\n" "red" && exit 1
     fi
 }
 
 CheckPackages(){
-    for i in $1
-    do 
+    for i in $1; do 
         if [[ ! $(command -v "$i") ]]; then
-            Print "$i: command not found, please check required packages.\n" "red"
-            exit 1
+            Print "$i: command not found, please check required packages.\n" "red" && exit 1
         fi
     done
 }
@@ -80,9 +72,7 @@ SetInterface(){
     INTERFACES=$(ip -json l | jq -r '.[]|.ifname' | grep -v lo)
     DEFAULT=$(echo "$INTERFACES" | head -1)
 
-    Print "Available interfaces :\n" "cyan"
-    echo "$INTERFACES"
-
+    Print "Available interfaces :\n" "cyan" && echo "$INTERFACES"
     WriteConfig "Interface" "$DEFAULT"
 }
 
@@ -114,37 +104,9 @@ Init(){
     mkdir "$CONFIGFOLDER"
 
     # Generate scripts
-    cat > "$CONFIGFOLDER/postup.sh" << EOF
-#! /usr/bin/env bash
-
-# ipv4
-/usr/sbin/iptables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
-
-# ipv6
-if [ "\$1" == "NAT" ]
-then
-    /usr/sbin/ip6tables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
-elif [ "\$1" == "FR" ]
-then
-    /usr/sbin/ip6tables -A FORWARD -i wg0 -j ACCEPT
-fi
-EOF
-
-    cat > "$CONFIGFOLDER/postdown.sh" << EOF
-#! /usr/bin/env bash
-
-# ipv4
-/usr/sbin/iptables -t nat -D POSTROUTING -o IFACE -j MASQUERADE
-
-# ipv6
-if [ "\$1" == "NAT" ]
-then
-    /usr/sbin/ip6tables -t nat -D POSTROUTING -o IFACE -j MASQUERADE
-elif [ "\$1" == "FR" ]
-then
-    /usr/sbin/ip6tables -D FORWARD -i wg0 -j ACCEPT
-fi
-EOF
+    curl -so "$CONFIGFOLDER/postup.sh" "$TEMPLATEURL/postup.sh"
+    curl -so "$CONFIGFOLDER/postdown.sh" "$TEMPLATEURL/postdown.sh"
+    curl -so "$WG0" "$TEMPLATEURL/wg0.conf" && chmod -v 600 "$WG0"
 
     chmod +x "$CONFIGFOLDER"/post{up,down}.sh
 }
@@ -162,13 +124,10 @@ EnableIPForward(){
 }
 
 Install(){
-    Print "Initializing\n"
-    Init
+    Print "Initializing\n" && Init
     
     Print "Writing configs\n"
-
-    SetInterface
-    IFACE=$(GetConf interface)
+    SetInterface && IFACE=$(GetConf interface)
     sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
 
     WriteConfig "Server" "$(curl -s ip.me)"
@@ -192,11 +151,9 @@ Install(){
         echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
     fi
 
-    Print "Enable IP forward\n"
-    EnableIPForward
+    Print "Enable IP forward\n" && EnableIPForward
 
-    Print "Generate server keys\n"
-    GeneratePrivateKey
+    Print "Generate server keys\n" && GeneratePrivateKey
 
     Read "Specify private key" "none"
     [ "$VAL" != "none" ] && PRIVKEY="$VAL"
@@ -205,24 +162,14 @@ Install(){
     Print "Generate config file\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
-    cat >"$WG0" <<EOF
-[Interface]
-Address = $IPv4Addr/24
-SaveConfig = false
-PrivateKey = $(cat "$CONFIGFOLDER"/priv.key)
-ListenPort = $(GetConf port)
-PostUp = $(pwd)/$CONFIGFOLDER/postup.sh $TYPE
-PostDown = $(pwd)/$CONFIGFOLDER/postdown.sh $TYPE
-
-EOF
+    sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat "$CONFIGFOLDER"/priv.key)#g" \
+    -e "s/PORT/$(GetConf port)/g" -e "s#CONFDIR#$(pwd)/$CONFIGFOLDER#g" -e "s/TYPE/$TYPE/g" "$WG0"
 
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         4to6 "$IPv4Addr"
         IPv6Addr="$(GetConf IPv6Prefix)$VAL/64"
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
     fi
-
-    chmod -v 600 "$WG0"
     
     Print "Enable service\n"
     wg-quick up wg0
@@ -236,8 +183,7 @@ SetClientIP(){
     MIN=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | cut -d "." -f 4 | tr -d " ")
     MAX=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmax | cut -d "." -f 4 | tr -d " ")
 
-    for i in $(seq "$MIN" "$MAX")
-    do
+    for i in $(seq "$MIN" "$MAX"); do
         DEFAULT="$PREFIX.$i"
         grep -q "$DEFAULT" $WG0 || break
     done
@@ -259,8 +205,7 @@ QR(){
 
 List(){
     PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
-    for i in $PUBKEYS
-    do
+    for i in $PUBKEYS; do
         CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
         IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | tr -d " " | cut -d "=" -f 2)
         Print "$CLIENT $IP $i\n" "orange"
@@ -339,8 +284,7 @@ EOF
 
 Del(){
     CFG="$CONFIGFOLDER/$2"
-    if [ -d "$CFG" ]
-    then
+    if [ -d "$CFG" ]; then
         ENTRY=$(grep -m 1 -n "# $2" "$WG0" | cut -d ":" -f 1)
         sed -ie "$ENTRY,$((ENTRY + 4))d" "$WG0"
 
