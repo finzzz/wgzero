@@ -2,6 +2,7 @@
 
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
+IPv6Prefix="fd00::"
 
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
@@ -59,8 +60,7 @@ WriteConfig(){
 }
 
 IsRoot(){
-    if [[ ! "$EUID" -eq 0 ]]
-    then
+    if [[ ! "$EUID" -eq 0 ]]; then
         Print "Must be run as root\n" "red"
         exit 1
     fi
@@ -69,8 +69,7 @@ IsRoot(){
 CheckPackages(){
     for i in $1
     do 
-        if [[ ! $(command -v "$i") ]]
-        then
+        if [[ ! $(command -v "$i") ]]; then
             Print "$i: command not found, please check required packages.\n" "red"
             exit 1
         fi
@@ -102,11 +101,9 @@ GeneratePublicKey(){
 }
 
 Init(){
-    if [ -d "$CONFIGFOLDER" ] || [ -f "$WG0" ]
-    then
+    if [ -d "$CONFIGFOLDER" ] || [ -f "$WG0" ]; then
         Read "Config folder .wgzero already exists, do you want to overwrite" "y/N"
-        if [ "$VAL" == "y" ]
-        then
+        if [ "$VAL" == "y" ]; then
             rm -rf "$CONFIGFOLDER" "$WG0"
             ip link del wg0 2>/dev/null
         else
@@ -127,7 +124,7 @@ Init(){
 if [ "\$1" == "NAT" ]
 then
     /usr/sbin/ip6tables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
-elif [ "\$1" == "SLAAC" ]
+elif [ "\$1" == "FR" ]
 then
     /usr/sbin/ip6tables -A FORWARD -i wg0 -j ACCEPT
 fi
@@ -143,7 +140,7 @@ EOF
 if [ "\$1" == "NAT" ]
 then
     /usr/sbin/ip6tables -t nat -D POSTROUTING -o IFACE -j MASQUERADE
-elif [ "\$1" == "SLAAC" ]
+elif [ "\$1" == "FR" ]
 then
     /usr/sbin/ip6tables -D FORWARD -i wg0 -j ACCEPT
 fi
@@ -156,8 +153,7 @@ EnableIPForward(){
     sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
     echo 1 > /proc/sys/net/ipv4/ip_forward
     
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         sed -i 's/\#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' /etc/sysctl.conf
         echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
     fi
@@ -181,22 +177,17 @@ Install(){
 
     TYPE="IPv4"
     Read "Enable IPv6" "y/N"
-    if [ "$VAL" == "y" ]
-    then
+    if [ "$VAL" == "y" ]; then
         TYPE="NAT"
-        IPv6Prefix="fd00::"
 
         Print "External routing: \n" "orange"
         Print "[1] NAT\n" "cyan"
-        Print "[2] SLAAC\n" "cyan"
+        Print "[2] Full Routing\n" "cyan"
         Read "Selection" "1"
 
         echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
-        if [ "$VAL" == "2" ]
-        then
-            IPv6Prefix=$(ip -json -6 a | jq -r '.[]|select(.ifname=="'"$IFACE"'")|.addr_info|.[]|select(.scope=="global")|.local')
-            TYPE="SLAAC"
-        fi
+        [ "$VAL" == "2" ] && TYPE="FR"
+
         Read "IPv6 Prefix" "$IPv6Prefix"
         echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
     fi
@@ -225,8 +216,7 @@ PostDown = $(pwd)/$CONFIGFOLDER/postdown.sh $TYPE
 
 EOF
 
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         4to6 "$IPv4Addr"
         IPv6Addr="$(GetConf IPv6Prefix)$VAL/64"
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
@@ -307,9 +297,6 @@ Address = $CLIENT_IP/32
 PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
 EOF
 
-    Read "DNS" "none"
-    [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
-
     PUBKEY=$(cat "$CONFIGFOLDER/pub.key")
     ENDPOINT="$(GetConf server):$(GetConf port)"
 
@@ -322,8 +309,7 @@ AllowedIPs = 0.0.0.0/0
 EOF
 
     # handle IPv6
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"
-    then
+    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         4to6 "$CLIENT_IP"
         IPv6Addr="$(GetConf IPv6Prefix)$VAL"
 
@@ -332,20 +318,18 @@ EOF
         "$CONFIGFOLDER/$NAME/conf"
 
         sed -i "s|^AllowedIPs.*$|&, $IPv6Addr/128|g" "$TMP"
-
-        [ "$(GetConf ExternalRouting)" == "2" ] && ip -6 route add "$IPv6Addr/128" dev wg0
     fi
 
     # advanced config
+    Read "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
     Read "Edit allowed IPs?" "y/N"
-    if [ "$VAL" == "y" ]
-    then
+    if [ "$VAL" == "y" ]; then
         ALLOWEDIPS=$(grep -i allowedips "$CONFIGFOLDER/$NAME/conf" | tr -d " " | cut -d "=" -f 2)
         Read "Allowed IPs" "$ALLOWEDIPS"
         [ "$VAL" != "$ALLOWEDIPS" ] && sed -i "s|AllowedIPs = .*|AllowedIPs = $VAL|g" "$CONFIGFOLDER/$NAME/conf"
     fi
 
-    # apply new config
+    # write and apply new config
     cat "$TMP" >> "$WG0" && rm -rf "$TMP"
     wg addconf wg0 <(wg-quick strip wg0)
 
@@ -362,12 +346,6 @@ Del(){
 
         wg set wg0 peer "$(cat "$CFG/pub.key")" remove
         wg addconf wg0 <(wg-quick strip wg0)
-
-        if [ "$(GetConf ExternalRouting)" == "2" ]
-        then
-            IPv6Addr=$(echo "$ENTRY" | grep -i "allowedips" | cut -d "," -f 2 | tr -d " ")
-            ip -6 route del "$IPv6Addr" dev wg0
-        fi
 
         rm -rf "$CFG"
     else

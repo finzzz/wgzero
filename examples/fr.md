@@ -1,12 +1,8 @@
-# Prereqs
-/etc/network/interfaces
-```
-...
-iface eth0 inet6 static
-    address 2404:6800:4004:809::/64
-    gateway fe80::1
-...
-```
+# Prereqs (!! IMPORTANT)
+- suppose provider gave IPv6 block of 2000:a:b:c::/64
+- that block should only be allocated to one interface, wg0 in this case
+- the main connection should have an IP outside that block, i.e. 2000:a:b::d/64
+- else, clients will have no connection
 
 Proceed only when `ping6 -I eth0 google.com` succeeds
 
@@ -17,7 +13,7 @@ Proceed only when `ping6 -I eth0 google.com` succeeds
     link/ether f2:3c:92:44:49:17 brd ff:ff:ff:ff:ff:ff
     inet 172.217.26.14/24 brd 172.217.26.255 scope global eth0
        valid_lft forever preferred_lft forever
-    inet6 2404:6800:4004:809::/64 scope global 
+    inet6 2404:6800:4004:999::f9f9/64 scope global 
        valid_lft forever preferred_lft forever
     inet6 fe80::f03c:92ff:fe44:4917/64 scope link 
        valid_lft forever preferred_lft forever
@@ -46,11 +42,6 @@ AllowedIPs = 10.10.0.2/32, 2404:6800:4004:809::2/128
 [Peer]
 PublicKey = RC6gRWSRi81bQOO7Hk8mYCkR5186EQEFTyiF4LoxYg4=
 AllowedIPs = 10.10.0.3/32, 2404:6800:4004:809::3/128
-```
-
-IMPORTANT when add new client!!
-```
-ip -6 route add 2404:6800:4004:809::2/128 dev wg0
 ```
 
 someclient.conf

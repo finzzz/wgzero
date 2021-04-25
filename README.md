@@ -5,7 +5,7 @@ Zero overhead wireguard setup. Tested on Debian 10.
 - [Requirements](#requirements)
     - [IPv6](#ipv6)
         - [NAT](#nat)
-        - [SLAAC (still has bugs)](#slaac--still-has-bugs-)
+        - [Full Routing](#Full-Routing)
 - [Installation](#installation)
 - [Other Commands](#other-commands)
 - [FAQ, troubleshoot, etc.](#faq--troubleshoot--etc)
@@ -19,31 +19,22 @@ Zero overhead wireguard setup. Tested on Debian 10.
 - jq
 
 ## IPv6
-If you need IPv6, please make sure you ipv6 works before proceeding.
-
-Tutorial:
-- https://www.linode.com/docs/networking/linux-static-ip-configuration
-- https://www.vultr.com/docs/configuring-ipv6-on-your-vps
+If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
 
 There are 2 types of connection:
 ### NAT
-- public IPv6 is being shared, and internal IPv6 uses ULA
+- public IPv6 is being shared, and internal IPv6 uses ULA (Unique Local Address)
 - you need to have IPv6 address similar to `2001::a:b:c:d/64`
 ![](static/nat.jpg)
 
-### SLAAC (still has bugs)
+### Full Routing
 - assign public IPv6 to each clients
 - you need to have IPv6 address similar to `2001:a:b:c::/64`
     - notice the colons, it means that you can assign multiple addresses to clients
-    - not every providers provide this, some require opening a ticket (linode provides this, not sponsoring though...)
-- make sure you have configuration `/etc/network/interfaces` similar to this
-```
-iface eth0 inet6 static
-    address 2001:a:b:c::/64
-    gateway fe80::1
-```
+    - not every providers provide this, some require opening a ticket (linode provides this)
+- **make sure you don't assign those IP addresses to any interfaces**
 
-![](static/slaac.jpg)
+![](static/fr.jpg)
 
 
 # Installation
@@ -53,6 +44,8 @@ curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
 chmod +x wgzero
 ./wgzero install
 ```
+
+![](static/install.png)
 
 # Other Commands
 ```
