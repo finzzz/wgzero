@@ -1,34 +1,37 @@
 # WGZero
 Zero overhead wireguard setup. Tested on Debian 10.
 
+# Table of contents
+- [Requirements](#requirements)
+    - [IPv6](#ipv6)
+        - [NAT](#nat)
+        - [SLAAC (still has bugs)](#slaac--still-has-bugs-)
+- [Installation](#installation)
+- [Other Commands](#other-commands)
+- [FAQ, troubleshoot, etc.](#faq--troubleshoot--etc)
+
 # Requirements
 - [wireguard](https://www.wireguard.com/install/)
 - curl
 - qrencode
 - iptables
 - ipcalc
+- jq
 
-# IPv6
-Please make sure you can connect to ipv6 address
-```
-root@localhost:~# ping6 -c 3 google.com
-PING google.com(nrt20s02-in-x0e.1e100.net (2404:6800:4004:809::200e)) 56 data bytes
-64 bytes from nrt20s02-in-x0e.1e100.net (2404:6800:4004:809::200e): icmp_seq=1 ttl=121 time=0.702 ms
-64 bytes from nrt20s02-in-x0e.1e100.net (2404:6800:4004:809::200e): icmp_seq=2 ttl=121 time=0.810 ms
-64 bytes from nrt20s02-in-x0e.1e100.net (2404:6800:4004:809::200e): icmp_seq=3 ttl=121 time=0.751 ms
+## IPv6
+If you need IPv6, please make sure you ipv6 works before proceeding.
 
---- google.com ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 15ms
-rtt min/avg/max/mdev = 0.702/0.754/0.810/0.049 ms
-```
+Tutorial:
+- https://www.linode.com/docs/networking/linux-static-ip-configuration
+- https://www.vultr.com/docs/configuring-ipv6-on-your-vps
 
-There are 2 types of connection (check your IP using `ip -6 a`):
-## NAT
+There are 2 types of connection:
+### NAT
 - public IPv6 is being shared, and internal IPv6 uses ULA
 - you need to have IPv6 address similar to `2001::a:b:c:d/64`
 ![](static/nat.jpg)
 
-## SLAAC (still has bugs)
+### SLAAC (still has bugs)
 - assign public IPv6 to each clients
 - you need to have IPv6 address similar to `2001:a:b:c::/64`
     - notice the colons, it means that you can assign multiple addresses to clients
@@ -50,7 +53,6 @@ curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
 chmod +x wgzero
 ./wgzero install
 ```
-
 
 # Other Commands
 ```
