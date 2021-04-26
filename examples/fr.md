@@ -25,6 +25,17 @@ Proceed only when `ping6 -I eth0 google.com` succeeds
        valid_lft forever preferred_lft forever
 ```
 
+/etc/ndppd.conf
+```
+proxy eth0 {
+    timeout 500
+    ttl 16000
+    rule 2404:6800:4004:809::/64 {
+        static
+    }
+}
+```
+
 /etc/wireguard/wg0.conf
 ```
 [Interface]

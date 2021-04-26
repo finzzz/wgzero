@@ -13,7 +13,7 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Requirements
 ## Packages
-[wireguard](https://www.wireguard.com/install/) curl qrencode iptables ipcalc jq
+[wireguard](https://www.wireguard.com/install/) curl ndppd qrencode iptables ipcalc jq
 
 ## IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
@@ -37,9 +37,7 @@ There are 2 types of connection:
 # Installation
 ```bash
 curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
-
-chmod +x wgzero
-./wgzero install
+chmod +x wgzero && ./wgzero install
 ```
 
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/install.png" width="700" height="500">
@@ -57,7 +55,7 @@ wgzero qr clientname
 ```bash
 echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
 apt update && apt upgrade
-apt install linux-headers-$(uname -r) wireguard qrencode ipcalc curl iptables jq
+apt install linux-headers-$(uname -r) wireguard curl ndppd qrencode iptables ipcalc jq
 # replace linux-headers-$(uname -r) with linux-headers-amd64 if errors
 ```
 

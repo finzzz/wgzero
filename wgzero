@@ -13,7 +13,7 @@ NC=$'\033[0m'
 
 Run(){
     IsRoot
-    CheckPackages "wg iptables curl qrencode ipcalc jq"
+    CheckPackages "wg iptables curl ndppd qrencode ipcalc jq"
 
     case "$1" in
     "install")
@@ -138,6 +138,7 @@ Install(){
     Read "Enable IPv6" "y/N"
     if [ "$VAL" == "y" ]; then
         TYPE="NAT"
+        Read "IPv6 Prefix" "$IPv6Prefix" && echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
 
         Print "External routing: \n" "orange"
         Print "[1] NAT\n" "cyan"
@@ -145,10 +146,12 @@ Install(){
         Read "Selection" "1"
 
         echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
-        [ "$VAL" == "2" ] && TYPE="FR"
-
-        Read "IPv6 Prefix" "$IPv6Prefix"
-        echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
+        if [ "$VAL" == "2" ]; then
+            TYPE="FR" 
+            curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
+            sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
+            systemctl restart ndppd.service
+        fi
     fi
 
     Print "Enable IP forward\n" && EnableIPForward
@@ -222,8 +225,7 @@ Add(){
     GeneratePrivateKey
     GeneratePublicKey "$CONFIGFOLDER/$NAME" "$PRIVKEY"
 
-    SetClientIP # return VAL
-    CLIENT_IP="$VAL"
+    SetClientIP && CLIENT_IP="$VAL"
 
     # appending server config
     TMP=$(mktemp)
