@@ -13,7 +13,7 @@ NC=$'\033[0m'
 
 Run(){
     IsRoot
-    CheckPackages "wg iptables curl ndppd qrencode ipcalc jq"
+    CheckPackages "wg iptables curl qrencode ipcalc jq"
 
     case "$1" in
     "install")
@@ -148,9 +148,11 @@ Install(){
         echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
         if [ "$VAL" == "2" ]; then
             TYPE="FR" 
-            curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
-            sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
-            systemctl restart ndppd.service
+
+            ## Need more research
+            # curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
+            # sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
+            # systemctl restart ndppd.service
         fi
     fi
 

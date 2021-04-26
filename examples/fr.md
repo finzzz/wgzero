@@ -25,7 +25,7 @@ Proceed only when `ping6 -I eth0 google.com` succeeds
        valid_lft forever preferred_lft forever
 ```
 
-/etc/ndppd.conf
+/etc/ndppd.conf (may not be needed)
 ```
 proxy eth0 {
     timeout 500

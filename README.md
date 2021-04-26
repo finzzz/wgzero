@@ -13,23 +13,23 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Requirements
 ## Packages
-[wireguard](https://www.wireguard.com/install/) curl ndppd qrencode iptables ipcalc jq
+[wireguard](https://www.wireguard.com/install/) curl qrencode iptables ipcalc jq
 
 ## IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
 
 There are 2 types of connection:
 ### NAT
-- public IPv6 is being shared, and internal IPv6 uses ULA (Unique Local Address)
-- you need to have IPv6 address similar to `2001::a:b:c:d/64`
+- Public IPv6 is being shared, and internal IPv6 uses ULA (Unique Local Address).
+- You need to have IPv6 address similar to `2001::a:b:c:d/64`.
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
 
 ### Full Routing
-- assign public IPv6 to each clients
-- you need to have IPv6 address similar to `2001:a:b:c::/64`
-    - notice the colons, it means that you can assign multiple addresses to clients
-    - not every providers provide this, some require opening a ticket (linode provides this)
-- **make sure you don't assign those IP addresses to any interfaces**
+- Assign public IPv6 to each clients.
+- Personally, I got this feature works only on Linode (Vultr failed, not sure other about providers).
+- You need to have IPv6 address similar to `2001:a:b:c::/64`.
+    - notice the colons, it means that you can assign multiple addresses to clients.
+- **Make sure you don't assign those IP addresses to any interfaces.**
 
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
 
@@ -55,7 +55,7 @@ wgzero qr clientname
 ```bash
 echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
 apt update && apt upgrade
-apt install linux-headers-$(uname -r) wireguard curl ndppd qrencode iptables ipcalc jq
+apt install linux-headers-$(uname -r) wireguard curl qrencode iptables ipcalc jq
 # replace linux-headers-$(uname -r) with linux-headers-amd64 if errors
 ```
 
