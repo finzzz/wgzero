@@ -27,7 +27,7 @@ Run(){
     "qr")
         QR "$2" ;;
     *)
-        Print "Unknown command\n" "red" ;;
+        Print "Unknown command\\n" "red" ;;
     esac
 }
 
@@ -56,14 +56,14 @@ WriteConfig(){
 
 IsRoot(){
     if [[ ! "$EUID" -eq 0 ]]; then
-        Print "Must be run as root\n" "red" && exit 1
+        Print "Must be run as root\\n" "red" && exit
     fi
 }
 
 CheckPackages(){
     for i in $1; do 
         if [[ ! $(command -v "$i") ]]; then
-            Print "$i: command not found, please check required packages.\n" "red" && exit 1
+            Print "$i: command not found, please check required packages.\\n" "red" && exit
         fi
     done
 }
@@ -72,12 +72,12 @@ SetInterface(){
     INTERFACES=$(ip -json l | jq -r '.[]|.ifname' | grep -v lo)
     DEFAULT=$(echo "$INTERFACES" | head -1)
 
-    Print "Available interfaces :\n" "cyan" && echo "$INTERFACES"
+    Print "Available interfaces :\\n" "cyan" && echo "$INTERFACES"
     WriteConfig "Interface" "$DEFAULT"
 }
 
 GetConf(){
-    grep -i "$1" "$CONFIGFOLDER/conf" | cut -d "=" -f 2
+    grep -i "^$1" "$CONFIGFOLDER/conf" | cut -d "=" -f 2
 }
 
 GeneratePrivateKey(){
@@ -97,7 +97,7 @@ Init(){
             rm -rf "$CONFIGFOLDER" "$WG0"
             ip link del wg0 2>/dev/null
         else
-            exit 1
+            exit
         fi
     fi
 
@@ -124,9 +124,9 @@ EnableIPForward(){
 }
 
 Install(){
-    Print "Initializing\n" && Init
+    Print "Initializing\\n" && Init
     
-    Print "Writing configs\n"
+    Print "Writing configs\\n"
     SetInterface && IFACE=$(GetConf interface)
     sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
 
@@ -139,51 +139,56 @@ Install(){
     if [ "$VAL" == "y" ]; then
         TYPE="NAT"
         Read "IPv6 Prefix" "$IPv6Prefix" && echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
+        Read "IPv6 Subnet" "64" && echo "IPv6Subnet=$VAL" >> "$CONFIGFOLDER/conf"
 
-        Print "External routing: \n" "orange"
-        Print "[1] NAT\n" "cyan"
-        Print "[2] Full Routing\n" "cyan"
+        Print "External routing: \\n" "orange"
+        Print "[1] NAT\\n" "cyan"
+        Print "[2] Full Routing\\n" "cyan"
         Read "Selection" "1"
 
         echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
         if [ "$VAL" == "2" ]; then
             TYPE="FR" 
 
-            ## Need more research
-            # curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
-            # sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
-            # systemctl restart ndppd.service
+            Read "Configure ndppd" "y/N"
+            if [ "$VAL" == "y" ]; then
+                command -v ndppd > /dev/null || (Print "Please install ndppd\\n" "red" && exit)
+
+                curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
+                sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
+                systemctl restart ndppd.service
+            fi
         fi
     fi
 
-    Print "Enable IP forward\n" && EnableIPForward
+    Print "Enable IP forward\\n" && EnableIPForward
 
-    Print "Generate server keys\n" && GeneratePrivateKey
+    Print "Generate server keys\\n" && GeneratePrivateKey
 
     Read "Specify private key" "none"
     [ "$VAL" != "none" ] && PRIVKEY="$VAL"
     GeneratePublicKey "$CONFIGFOLDER" "$PRIVKEY"
 
-    Print "Generate config file\n"
+    Print "Generate config file\\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
     sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat "$CONFIGFOLDER"/priv.key)#g" \
     -e "s/PORT/$(GetConf port)/g" -e "s#CONFDIR#$(pwd)/$CONFIGFOLDER#g" -e "s/TYPE/$TYPE/g" "$WG0"
 
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
-        4to6 "$IPv4Addr"
-        IPv6Addr="$(GetConf IPv6Prefix)$VAL/64"
+        SetClientIPv6
+        IPv6Addr="$(GetConf IPv6Prefix)$VAL/$(GetConf IPv6Subnet)"
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
     fi
     
-    Print "Enable service\n"
+    Print "Enable service\\n"
     wg-quick up wg0
     systemctl enable wg-quick@wg0
 
-    Print "Done, make sure $(GetConf port)/UDP is open\n" "red"
+    Print "Done, make sure $(GetConf port)/UDP is open\\n" "red"
 }
 
-SetClientIP(){
+SetClientIPv4(){
     PREFIX=$(GetConf subnet | cut -d "." -f 1,2,3)
     MIN=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | cut -d "." -f 4 | tr -d " ")
     MAX=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmax | cut -d "." -f 4 | tr -d " ")
@@ -193,18 +198,18 @@ SetClientIP(){
         grep -q "$DEFAULT" $WG0 || break
     done
 
-    Read "Choose client IP" "$DEFAULT"
+    Read "Choose client IPv4" "$DEFAULT"
 }
 
-4to6(){
-    VAL=$(echo "$1" | cut -d "." -f 4 | xargs printf "%x")
+SetClientIPv6(){
+    VAL=$(head -c 2 /dev/random | od -A n -t x2 | tr -d " ") ## randomize IPv6
 }
 
 QR(){
     CFG="$CONFIGFOLDER/$1/conf"
-    [ ! -f "$CFG" ] && Print "Client doesn't exist\n" "red" && exit 1
+    [ ! -f "$CFG" ] && Print "Client doesn't exist\\n" "red" && exit
 
-    Print "\n$CFG\n" "red"
+    Print "\\n$CFG\\n" "red"
     /usr/bin/qrencode -t ansiutf8 < "$CFG"
 }
 
@@ -213,21 +218,21 @@ List(){
     for i in $PUBKEYS; do
         CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
         IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | tr -d " " | cut -d "=" -f 2)
-        Print "$CLIENT $IP $i\n" "orange"
+        Print "$CLIENT $IP $i\\n" "orange"
     done
 }
 
 Add(){
     NAME="$2"
 
-    [[ ! "$NAME" ]] && exit 1
-    [[ -d "$CONFIGFOLDER/$NAME" ]] && Print "Client already exists\n" "red" && exit 1
+    [[ ! "$NAME" ]] && exit
+    [[ -d "$CONFIGFOLDER/$NAME" ]] && Print "Client already exists\\n" "red" && exit
 
     mkdir "$CONFIGFOLDER/$NAME"
     GeneratePrivateKey
     GeneratePublicKey "$CONFIGFOLDER/$NAME" "$PRIVKEY"
 
-    SetClientIP && CLIENT_IP="$VAL"
+    SetClientIPv4 && CLIENT_IP="$VAL"
 
     # appending server config
     TMP=$(mktemp)
@@ -259,10 +264,11 @@ EOF
 
     # handle IPv6
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
-        4to6 "$CLIENT_IP"
-        IPv6Addr="$(GetConf IPv6Prefix)$VAL"
+        SetClientIPv6 # set default
 
-        sed -i -e "s|^Address.*$|&, $IPv6Addr/64|g" \
+        Read "Choose client IPv6" "$(GetConf IPv6Prefix)$VAL" && IPv6Addr="$VAL"
+
+        sed -i -e "s|^Address.*$|&, $IPv6Addr/128|g" \
         -e "s|^AllowedIPs.*$|&, ::/0|g" \
         "$CONFIGFOLDER/$NAME/conf"
 
@@ -297,7 +303,7 @@ Del(){
 
         rm -rf "$CFG"
     else
-        Print "Client doesn't exist\n" "red"
+        Print "Client doesn't exist\\n" "red"
     fi
 }
 
