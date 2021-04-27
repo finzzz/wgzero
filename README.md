@@ -30,16 +30,17 @@ There are 2 types of connection:
 - I have tested this feature on Linode, [Hetzner, and Vultr (need ndppd)](#Full-IPv6-routing-on-Hetzner-and-Vultr).
 - You need to have IPv6 address similar to `2001:a:b:c::/64`.
     - notice the colons, it means that you can assign multiple addresses to clients.
-- **Make sure you don't assign those IP addresses to any interfaces.**
+    - **(Recommended)** you can get free IPv6 block from tunnelbroker.net, /64 is enough.
+- **Make sure you don't assign those IP addresses to any interfaces.**  
+  Except with tunnelbroker default configuration.
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
-
 
 # Installation
 ```bash
 curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
 chmod +x wgzero && ./wgzero install
 ```
-<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/install.png" width="700" height="500">
+<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/install.png" width="675" height="500">
 
 
 # Other Commands
