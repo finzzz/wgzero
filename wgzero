@@ -107,7 +107,7 @@ Init(){
     # Generate scripts
     curl -so "$CONFIGFOLDER/postup.sh" "$TEMPLATEURL/postup.sh"
     curl -so "$CONFIGFOLDER/postdown.sh" "$TEMPLATEURL/postdown.sh"
-    curl -so "$WG0" "$TEMPLATEURL/wg0.conf" && chmod -v 600 "$WG0"
+    curl -so "$WG0" "$TEMPLATEURL/wg0.conf" && chmod 600 "$WG0"
 
     chmod +x "$CONFIGFOLDER"/post{up,down}.sh
 }
@@ -121,19 +121,24 @@ EnableIPForward(){
         echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
     fi
     
-    /usr/sbin/sysctl -p
+    /usr/sbin/sysctl -p -q
 }
 
 Install(){
-    Print "Initializing\\n" && Init
+    Init
     
-    Print "Writing configs\\n"
     SetInterface && IFACE=$(GetConf interface)
     sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
 
     WriteConfig "Server" "$(curl -s ip.me)"
     WriteConfig "Port" "$PORT"
     WriteConfig "Subnet" "10.10.0.1/24"
+
+    # Print "Generate server keys\\n"
+    GeneratePrivateKey
+    Read "Specify private key" "none"
+    [ "$VAL" != "none" ] && PRIVKEY="$VAL"
+    GeneratePublicKey "$CONFIGFOLDER" "$PRIVKEY"
 
     TYPE="IPv4"
     Read "Enable IPv6" "y/N"
@@ -153,24 +158,19 @@ Install(){
 
             Read "Configure ndppd" "y/N"
             if [ "$VAL" == "y" ]; then
-                command -v ndppd > /dev/null || (Print "Please install ndppd\\n" "red" && exit)
+                CheckPackages ndppd
 
                 curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
                 sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
+                systemctl enable ndppd.service
                 systemctl restart ndppd.service
             fi
         fi
     fi
 
-    Print "Enable IP forward\\n" && EnableIPForward
+    EnableIPForward # && Print "Enable IP forward\\n"
 
-    Print "Generate server keys\\n" && GeneratePrivateKey
-
-    Read "Specify private key" "none"
-    [ "$VAL" != "none" ] && PRIVKEY="$VAL"
-    GeneratePublicKey "$CONFIGFOLDER" "$PRIVKEY"
-
-    Print "Generate config file\\n"
+    # Print "Generate config file\\n"
     IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
 
     sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat "$CONFIGFOLDER"/priv.key)#g" \
@@ -182,8 +182,8 @@ Install(){
         sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
     fi
     
-    Print "Enable service\\n"
-    wg-quick up wg0
+    # Print "Enable service\\n"
+    wg-quick up wg0 2>/dev/null
     systemctl enable wg-quick@wg0
 
     Print "Done, make sure $(GetConf port)/UDP is open\\n" "red"

@@ -40,7 +40,21 @@ There are 2 types of connection:
 curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
 chmod +x wgzero && ./wgzero install
 ```
-<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/install.png" width="675" height="500">
+
+## Example
+```
+root@vultr:~# ./wgzero install
+Config folder .wgzero already exists, do you want to overwrite [y/N]: y
+Available interfaces :
+ens3
+Interface [ens3]: 
+Server [45.76.111.176]: 
+Port [63350]: 
+Subnet [10.10.0.1/24]: 
+Specify private key [none]: 
+Enable IPv6 [y/N]: 
+Done, make sure 63350/UDP is open
+```
 
 
 # Other Commands
@@ -80,18 +94,17 @@ The entry should be similar to this,
 | 2a2a:fafa:caca:baba::abcd | 2a2a:fafa:caca:baba:: | 64      | (use router discovery) |
 
 
-### Installation walkthrough
+### Example
 ```
-Initializing
+root@vultr:~# ./wgzero install
 Config folder .wgzero already exists, do you want to overwrite [y/N]: y
-mode of '/etc/wireguard/wg0.conf' changed from 0644 (rw-r--r--) to 0600 (rw-------)
-Writing configs
 Available interfaces :
 ens3
-Interface [eth0]: 
-Server [1.2.3.4]: 
-Port [51820]: 
+Interface [ens3]: 
+Server [45.76.111.176]: 
+Port [31407]: 
 Subnet [10.10.0.1/24]: 
+Specify private key [none]: 
 Enable IPv6 [y/N]: y
 IPv6 Prefix [fd00::]: 2a2a:fafa:caca:baba:dada::
 IPv6 Subnet [64]: 80
@@ -100,21 +113,7 @@ External routing:
 [2] Full Routing
 Selection [1]: 2
 Configure ndppd [y/N]: y
-Enable IP forward
-net.ipv4.ip_forward = 1
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.all.accept_ra = 2
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-Generate server keys
-Specify private key [none]: 
-Generate config file
-Enable service
-[#] ip link add wg0 type wireguard
-[#] wg setconf wg0 /dev/fd/63
-[#] ip -4 address add 10.10.0.1/24 dev wg0
-[#] ip -6 address add 2a2a:fafa:caca:baba:dada::2f04/80 dev wg0
-[#] ip link set mtu 1420 up dev wg0
-[#] /root/.wgzero/postup.sh FR
-Done, make sure 51820/UDP is open
+ndppd.service is not a native service, redirecting to systemd-sysv-install.
+Executing: /lib/systemd/systemd-sysv-install enable ndppd
+Done, make sure 31407/UDP is open
 ```
