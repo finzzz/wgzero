@@ -2,6 +2,7 @@
 
 CONFIGFOLDER=".wgzero"
 WG0="/etc/wireguard/wg0.conf"
+PORT=$(shuf -n 1 -i 10000-65535)
 IPv6Prefix="fd00::"
 TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
 
@@ -131,7 +132,7 @@ Install(){
     sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
 
     WriteConfig "Server" "$(curl -s ip.me)"
-    WriteConfig "Port" "51820"
+    WriteConfig "Port" "$PORT"
     WriteConfig "Subnet" "10.10.0.1/24"
 
     TYPE="IPv4"
