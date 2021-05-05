@@ -252,6 +252,8 @@ Address = $CLIENT_IP/32
 PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
 EOF
 
+    Read "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
+
     PUBKEY=$(cat "$CONFIGFOLDER/pub.key")
     ENDPOINT="$(GetConf server):$(GetConf port)"
 
@@ -275,9 +277,7 @@ EOF
 
         sed -i "s|^AllowedIPs.*$|&, $IPv6Addr/128|g" "$TMP"
     fi
-
-    # advanced config
-    Read "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
+    
     Read "Edit allowed IPs?" "y/N"
     if [ "$VAL" == "y" ]; then
         ALLOWEDIPS=$(grep -i allowedips "$CONFIGFOLDER/$NAME/conf" | tr -d " " | cut -d "=" -f 2)
