@@ -77,6 +77,19 @@ apt install linux-headers-$(uname -r) wireguard curl qrencode iptables ipcalc jq
 ## Running alongside Pihole  
 Run `pihole restartdns` after setup
 
+## Usage with UFW
+Suppose wireguard port is `51820` and gateway interface is `eth0`.
+```bash
+# 1. Allow incoming udp port
+ufw allow 51820/udp 
+
+# 2a. Allow traffic forwarding
+ufw route allow in on wg0 out on eth0 
+
+# 2b. Alternatively, you can allow all forwarding using
+ufw default allow routed
+```
+
 ## Full IPv6 routing on Hetzner and Vultr
 ***Install ndppd before proceeding***
 
