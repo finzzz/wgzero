@@ -63,6 +63,8 @@ wgzero list
 wgzero add clientname
 wgzero del clientname
 wgzero qr clientname
+wgzero enable clientname
+wgzero disable clientname
 ```
 
 # FAQ, troubleshoot, etc.

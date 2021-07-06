@@ -25,6 +25,10 @@ Run(){
         Add "$@" ;;
     "del")
         Del "$@" ;;
+    "enable")
+        Enable "$@" ;;
+    "disable")
+        Disable "$@" ;;
     "qr")
         QR "$2" ;;
     *)
@@ -306,6 +310,32 @@ Del(){
     else
         Print "Client doesn't exist\\n" "red"
     fi
+}
+
+ModifyClientEntry(){
+    CFG="$CONFIGFOLDER/$1"
+    if [ -d "$CFG" ]; then
+        PUBKEY=$(cat "$CFG"/pub.key)
+        LINENUM=$(grep -n "$PUBKEY" "$WG0" | cut -d ':' -f 1)
+
+        if [ ! "$LINENUM" ]; then
+            Print "Cannot find public key in $WG0\\n" "red" && exit
+        fi
+
+        sed -i -e "$LINENUM $2" -e "$(expr "$LINENUM" + 1) $2" -e "$(expr "$LINENUM" - 1) $2" "$WG0"
+        wg set wg0 peer "$(cat "$CFG/pub.key")" remove
+        wg addconf wg0 <(wg-quick strip wg0)
+    else
+        Print "Client doesn't exist\\n" "red"
+    fi
+}
+
+Disable(){
+    ModifyClientEntry $2 "s/./#&/"
+}
+
+Enable(){
+    ModifyClientEntry $2 "s/^#//"
 }
 
 Run "$@"
