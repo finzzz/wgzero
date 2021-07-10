@@ -15,21 +15,22 @@ NC=$'\033[0m'
 
 Run(){
     IsRoot
-    CheckPackages "wg iptables curl qrencode ipcalc jq"
+    CheckPackages "wg iptables curl qrencode jq"
 
     case "$1" in
     "install")
         Install ;;
     "list")
-        List ;;
+        List | column -t -s, 2>/dev/null
+        echo -en "${NC}" ;;
     "add")
         Add "$@" ;;
     "del")
         Del "$@" ;;
     "enable")
-        Enable "$@" ;;
+        ModifyClientEntry "$2" "s/^#//" ;;
     "disable")
-        Disable "$@" ;;
+        ModifyClientEntry "$2" "s/^[^#]./#&/" ;;
     "qr")
         QR "$2" ;;
     *)
@@ -178,9 +179,9 @@ Install(){
     EnableIPForward # && Print "Enable IP forward\\n"
 
     # Print "Generate config file\\n"
-    IPv4Addr=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | tr -s " " | cut -d " " -f 2)
+    IPv4Addr=$(Prips "$(GetConf subnet)" | head -1)
 
-    sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat "$CONFIGFOLDER"/priv.key)#g" \
+    sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat $CONFIGFOLDER/priv.key)#g" \
     -e "s/PORT/$(GetConf port)/g" -e "s#CONFDIR#$(pwd)/$CONFIGFOLDER#g" -e "s/TYPE/$TYPE/g" "$WG0"
 
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
@@ -196,14 +197,33 @@ Install(){
     Print "Done, make sure $(GetConf port)/UDP is open\\n" "red"
 }
 
-SetClientIPv4(){
-    PREFIX=$(GetConf subnet | cut -d "." -f 1,2,3)
-    MIN=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmin | cut -d "." -f 4 | tr -d " ")
-    MAX=$(/usr/bin/ipcalc -b "$(GetConf subnet)" | grep -i hostmax | cut -d "." -f 4 | tr -d " ")
+Prips() {
+    BASE=${1%/*}
+    MASKSIZE=${1#*/}
 
-    for i in $(seq "$MIN" "$MAX"); do
-        DEFAULT="$PREFIX.$i"
-        grep -q "$DEFAULT" $WG0 || break
+    [ "$MASKSIZE" -lt 8 ] && { echo "Max range is /8."; exit 1; }
+
+    MASK=$(( 0xFFFFFFFF << (32 - "$MASKSIZE") ))
+
+    IFS=. read -r a b c d <<< "$BASE"
+
+    IP=$(( (b << 16) + (c << 8) + d ))
+
+    IPSTART=$(( IP & MASK ))
+    IPEND=$(( (IPSTART | ~MASK ) & 0x7FFFFFFF ))
+
+    seq "$IPSTART" "$IPEND" | while read -r i; do
+        LAST=$(( i & 0x00FF ))
+        if [ $LAST -ne 0 ] && [ $LAST -ne 255 ]; then
+            echo "$a.$(( (i & 0xFF0000) >> 16 )).$(( (i & 0xFF00) >> 8 )).$LAST"
+        fi
+    done
+}
+
+SetClientIPv4(){
+    for i in $(Prips "$(GetConf subnet)"); do
+        DEFAULT="$i"
+        grep -q "$i" $WG0 || break
     done
 
     Read "Choose client IPv4" "$DEFAULT"
@@ -225,12 +245,12 @@ List(){
     PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
     for i in $PUBKEYS; do
         CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
-        IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | tr -d " " | cut -d "=" -f 2)
+        IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | cut -d "=" -f 2)
         ISDISABLED=$(grep "$IP" /etc/wireguard/wg0.conf | grep -c -E "^#")
         if [ "$ISDISABLED" -eq 1 ]; then
-            Print "[disabled] $CLIENT $IP $i\\n" "gray"
+            Print "$CLIENT,$IP,$i,[disabled]\\n" "gray"
         else
-            Print "$CLIENT $IP $i\\n" "orange"
+            Print "$CLIENT,$IP,$i\\n" "orange"
         fi
     done
 }
@@ -330,20 +350,12 @@ ModifyClientEntry(){
             Print "Cannot find public key in $WG0\\n" "red" && exit
         fi
 
-        sed -i -e "$LINENUM $2" -e "$(expr "$LINENUM" + 1) $2" -e "$(expr "$LINENUM" - 1) $2" "$WG0"
+        sed -i -e "$LINENUM $2" -e "$(( "$LINENUM" + 1 )) $2" -e "$(( "$LINENUM" - 1 )) $2" "$WG0"
         wg set wg0 peer "$(cat "$CFG/pub.key")" remove
         wg addconf wg0 <(wg-quick strip wg0)
     else
         Print "Client doesn't exist\\n" "red"
     fi
-}
-
-Disable(){
-    ModifyClientEntry $2 "s/./#&/"
-}
-
-Enable(){
-    ModifyClientEntry $2 "s/^#//"
 }
 
 Run "$@"
