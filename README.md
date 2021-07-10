@@ -13,7 +13,7 @@ Zero overhead wireguard setup. Tested on Debian 10.
 
 # Requirements
 ## Packages
-[wireguard](https://www.wireguard.com/install/) curl qrencode iptables ipcalc jq
+[wireguard](https://www.wireguard.com/install/) curl qrencode iptables jq
 
 ## IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
@@ -72,7 +72,7 @@ wgzero disable clientname
 ```bash
 echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
 apt update && apt upgrade
-apt install linux-headers-$(uname -r) wireguard curl qrencode iptables ipcalc jq
+apt install linux-headers-$(uname -r) wireguard curl qrencode iptables jq
 # replace linux-headers-$(uname -r) with linux-headers-amd64 if errors
 ```
 
