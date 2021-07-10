@@ -6,6 +6,7 @@ PORT=$(shuf -n 1 -i 10000-65535)
 IPv6Prefix="fd00::"
 TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
 
+GRAY=$'\033[1;30m'
 RED=$'\033[1;31m'
 GREEN=$'\033[0;32m'
 ORANGE=$'\033[0;33m'
@@ -44,6 +45,8 @@ Print(){
         echo -en "${CYAN}$1${NC}";;
     "orange")
         echo -en "${ORANGE}$1${NC}";;
+    "gray")
+        echo -en "${GRAY}$1${NC}";;
     *)
         echo -en "${GREEN}$1${NC}";;
     esac
@@ -223,7 +226,12 @@ List(){
     for i in $PUBKEYS; do
         CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
         IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | tr -d " " | cut -d "=" -f 2)
-        Print "$CLIENT $IP $i\\n" "orange"
+        ISDISABLED=$(grep "$IP" /etc/wireguard/wg0.conf | grep -c -E "^#")
+        if [ "$ISDISABLED" -eq 1 ]; then
+            Print "[disabled] $CLIENT $IP $i\\n" "gray"
+        else
+            Print "$CLIENT $IP $i\\n" "orange"
+        fi
     done
 }
 
