@@ -1,42 +1,105 @@
 #! /usr/bin/env bash
 
-CONFIGFOLDER=".wgzero"
-WG0="/etc/wireguard/wg0.conf"
+WG_DIR="/etc/wireguard/"
 PORT=$(shuf -n 1 -i 10000-65535)
-IPv6Prefix="fd00::"
+# IPv6Prefix="fd00::"
 TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
 
-GRAY=$'\033[1;30m'
-RED=$'\033[1;31m'
-GREEN=$'\033[0;32m'
-ORANGE=$'\033[0;33m'
-CYAN=$'\033[0;36m'
-NC=$'\033[0m'
+GRAY="$(tput setaf 8)"
+RED="$(tput setaf 1)"
+GREEN="$(tput setaf 2)"
+ORANGE="$(tput setaf 3)"
+CYAN="$(tput setaf 6)"
+NC="$(tput sgr0)"
 
 Run(){
     IsRoot
     CheckPackages "wg iptables curl qrencode jq"
+    EnableIPForward
 
     case "$1" in
     "install")
+        # ./wgzero install
         Install ;;
+    "import")
+        # ./wgzero import wg0.conf
+        Import "$@" ;;
     "list")
+        # ./wgzero list <wg_interface=wg0>
         List | column -t -s, 2>/dev/null
         echo -en "${NC}" ;;
     "add")
+        # ./wgzero add <client_name> <wg_interface=wg0>
         Add "$@" ;;
     "del")
+        # ./wgzero delete <client_name> <wg_interface=wg0>
         Del "$@" ;;
+    "edit")
+        # ./wgzero edit server <wg_interface=wg0>
+        # ./wgzero edit <client_name> <wg_interface=wg0>
+        Edit "$@" ;;
     "enable")
+        # ./wgzero enable <client_name> <wg_interface=wg0>
         ModifyClientEntry "$2" "s/^#//" ;;
     "disable")
+        # ./wgzero disable <client_name> <wg_interface=wg0>
         ModifyClientEntry "$2" "s/^[^#]./#&/" ;;
     "qr")
-        QR "$2" ;;
+        # ./wgzero qr <client_name> <wg_interface=wg0>
+        ShowQR "$2" ;;
+    "postup")
+        # ./wgzero postup <wg_interface>
+        INTERFACE="eth0"
+        TYPE="v4"
+        /usr/sbin/iptables -t nat -A POSTROUTING -o "$INTERFACE" -j MASQUERADE
+        if [ "$2" == "nat" ]; then
+            /usr/sbin/ip6tables -t nat -A POSTROUTING -o "$INTERFACE" -j MASQUERADE
+        elif [ "$2" == "fr" ]; then
+            /usr/sbin/ip6tables -A FORWARD -i "$3" -j ACCEPT
+        fi
+        ;;
+    "postdown")
+        # ./wgzero postdown <wg_interface>
+        INTERFACE="eth0"
+        TYPE="v4"
+        /usr/sbin/iptables -t nat -D POSTROUTING -o "$INTERFACE" -j MASQUERADE
+        if [ "$2" == "nat" ]; then
+            /usr/sbin/ip6tables -t nat -D POSTROUTING -o "$INTERFACE" -j MASQUERADE
+        elif [ "$2" == "fr" ]; then
+            /usr/sbin/ip6tables -D FORWARD -i "$3" -j ACCEPT
+        fi
+        ;;
     *)
         Print "Unknown command\\n" "red" ;;
     esac
 }
+
+### PRECHECKS ###
+IsRoot(){
+    if [[ ! "$EUID" -eq 0 ]]; then
+        Print "Must be run as root\\n" "red" && exit
+    fi
+}
+
+CheckPackages(){
+    for i in $1; do 
+        if [[ ! $(command -v "$i") ]]; then
+            Print "$i: command not found, please check required packages.\\n" "red" && exit
+        fi
+    done
+}
+
+EnableIPForward(){
+    sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    
+    # IPv6
+    sed -i 's/\#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' /etc/sysctl.conf
+    echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+    
+    /usr/sbin/sysctl -p -q
+}
+###
 
 Print(){
     case "$2" in
@@ -53,151 +116,117 @@ Print(){
     esac
 }
 
-Read(){
+ReadInput(){
     read -rp "${ORANGE}$1 [$2]: ${NC}" VAL
     VAL=${VAL:-"$2"}
 }
 
+ReadConfig(){
+    # ReadConfig section wg0
+    grep "$1 = " "/etc/wireguard/$2" | cut -d "=" -f 2 | tr -d " "
+}
+
 WriteConfig(){
-    Read "$1" "$2"
-    echo "$1=$VAL" >> "$CONFIGFOLDER/conf"
-}
-
-IsRoot(){
-    if [[ ! "$EUID" -eq 0 ]]; then
-        Print "Must be run as root\\n" "red" && exit
-    fi
-}
-
-CheckPackages(){
-    for i in $1; do 
-        if [[ ! $(command -v "$i") ]]; then
-            Print "$i: command not found, please check required packages.\\n" "red" && exit
-        fi
-    done
-}
-
-SetInterface(){
-    INTERFACES=$(ip -json l | jq -r '.[]|.ifname' | grep -v lo)
-    DEFAULT=$(echo "$INTERFACES" | head -1)
-
-    Print "Available interfaces :\\n" "cyan" && echo "$INTERFACES"
-    WriteConfig "Interface" "$DEFAULT"
-}
-
-GetConf(){
-    grep -i "^$1" "$CONFIGFOLDER/conf" | cut -d "=" -f 2
-}
-
-GeneratePrivateKey(){
-    PRIVKEY=$(/usr/bin/wg genkey)
+    # WriteConfig section default_val wg0
+    ReadInput "$1" "$2"
+    sed -i "s/$1 =.*/$1 = $VAL/g" "/etc/wireguard/$3.conf"
 }
 
 GeneratePublicKey(){
-    echo "$2" \
-    | tee "$1/priv.key" \
-    | /usr/bin/wg pubkey > "$1/pub.key"
+    # GeneratePublicKey privatekey
+    echo "$1" | /usr/bin/wg pubkey
 }
 
-Init(){
-    if [ -d "$CONFIGFOLDER" ] || [ -f "$WG0" ]; then
-        Read "Config folder .wgzero already exists, do you want to overwrite" "y/N"
+### INSTALL ###
+GenerateConfig(){
+    # GenerateConfig wg0
+    CFG="/etc/wireguard/$1.conf"
+    if [ -f "$CFG" ]; then
+        ReadInput "Config file $CFG already exists, do you want to overwrite" "y/N"
         if [ "$VAL" == "y" ]; then
-            rm -rf "$CONFIGFOLDER" "$WG0"
-            ip link del wg0 2>/dev/null
+            rm "$CFG"
+            ip link del "$1" 2>/dev/null
         else
             exit
         fi
     fi
-
-    mkdir "$CONFIGFOLDER"
-
-    # Generate scripts
-    curl -so "$CONFIGFOLDER/postup.sh" "$TEMPLATEURL/postup.sh"
-    curl -so "$CONFIGFOLDER/postdown.sh" "$TEMPLATEURL/postdown.sh"
-    curl -so "$WG0" "$TEMPLATEURL/wg0.conf" && chmod 600 "$WG0"
-
-    chmod +x "$CONFIGFOLDER"/post{up,down}.sh
+    
+    curl -so "$CFG" "$TEMPLATEURL/wg0.conf"
+    sed -i "s/WG_INTERFACE/$1/g" "$CFG"
+    chmod 600 "$CFG"
 }
 
-EnableIPForward(){
-    sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
-        sed -i 's/\#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' /etc/sysctl.conf
-        echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
-    fi
-    
-    /usr/sbin/sysctl -p -q
+SetInterface(){
+    # SetInterface wg0
+    INTERFACES=$(ip -json l | jq -r '.[]|.ifname' | grep -v lo)
+    DEFAULT=$(echo "$INTERFACES" | head -1)
+
+    Print "Available interfaces :\\n" "cyan" && echo "$INTERFACES"
+    WriteConfig "Interface" "$DEFAULT" "$1"
 }
 
 Install(){
-    Init
-    
-    SetInterface && IFACE=$(GetConf interface)
-    sed -i "s/IFACE/$IFACE/g" "$CONFIGFOLDER"/post{up,down}.sh
+    ReadInput "Wireguard Interface Name" "wg0" && WG="$VAL"
+    GenerateConfig "$WG"
+    SetInterface "$WG"
+    WriteConfig "Endpoint" "$(curl -s ip.me)" "$WG"
+    WriteConfig "ListenPort" "$PORT" "$WG"
+    WriteConfig "Address" "10.10.0.1/24" "$WG"
+    WriteConfig "MTU" "1420" "$WG"
+    WriteConfig "Client MTU" "unset" "$WG"
+    WriteConfig "DNS" "unset" "$WG"
+    WriteConfig "KeepAlive" "unset" "$WG"
 
-    WriteConfig "Server" "$(curl -s ip.me)"
-    WriteConfig "Port" "$PORT"
-    WriteConfig "Subnet" "10.10.0.1/24"
-
-    # Print "Generate server keys\\n"
-    GeneratePrivateKey
-    Read "Specify private key" "none"
+    # Generate Private Key
+    PRIVKEY=$(/usr/bin/wg genkey)
+    ReadInput "Specify private key" "none"
     [ "$VAL" != "none" ] && PRIVKEY="$VAL"
-    GeneratePublicKey "$CONFIGFOLDER" "$PRIVKEY"
+    sed -i "s/PrivateKey =.*/PrivateKey = $PRIVKEY/g" "/etc/wireguard/$WG.conf"
 
-    TYPE="IPv4"
-    Read "Enable IPv6" "y/N"
+    TYPE="v4"
+    ReadInput "Enable IPv6" "y/N"
     if [ "$VAL" == "y" ]; then
-        TYPE="NAT"
-        Read "IPv6 Prefix" "$IPv6Prefix" && echo "IPv6Prefix=$VAL" >> "$CONFIGFOLDER/conf"
-        Read "IPv6 Subnet" "64" && echo "IPv6Subnet=$VAL" >> "$CONFIGFOLDER/conf"
+        TYPE="nat"
+        WriteConfig "IPv6 Prefix" "fd00::" "$WG"
+        WriteConfig "IPv6 Subnet" "64" "$WG"
+
+        IPv6Prefix="$(ReadConfig 'IPv6 Prefix' $WG)"
+        IPv6Subnet="$(ReadConfig 'IPv6 Subnet' $WG)"
 
         Print "External routing: \\n" "orange"
         Print "[1] NAT\\n" "cyan"
         Print "[2] Full Routing\\n" "cyan"
-        Read "Selection" "1"
+        ReadInput "Selection" "1"
 
-        echo "ExternalRouting=$VAL" >> "$CONFIGFOLDER/conf"
         if [ "$VAL" == "2" ]; then
-            TYPE="FR" 
+            TYPE="fr" 
 
-            Read "Configure ndppd" "y/N"
+            ReadInput "Configure ndppd" "y/N"
             if [ "$VAL" == "y" ]; then
                 CheckPackages ndppd
 
                 curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
-                sed -i -e "s/IFACE/$IFACE/g" -e "s/PREFIX/$(GetConf IPv6Prefix)/g" /etc/ndppd.conf
+                sed -i -e "s/IFACE/$IPv6Prefix/g" /etc/ndppd.conf
+                sed -i -e "s/PREFIX/$IPv6Subnet/g" /etc/ndppd.conf
                 systemctl enable ndppd.service
                 systemctl restart ndppd.service
             fi
         fi
-    fi
 
-    EnableIPForward # && Print "Enable IP forward\\n"
-
-    # Print "Generate config file\\n"
-    IPv4Addr=$(Prips "$(GetConf subnet)" | head -1)
-
-    sed -i -e "s/SERVER/$IPv4Addr/g" -e "s#PRIVKEY#$(cat $CONFIGFOLDER/priv.key)#g" \
-    -e "s/PORT/$(GetConf port)/g" -e "s#CONFDIR#$(pwd)/$CONFIGFOLDER#g" -e "s/TYPE/$TYPE/g" "$WG0"
-
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         SetClientIPv6
-        IPv6Addr="$(GetConf IPv6Prefix)$VAL/$(GetConf IPv6Subnet)"
-        sed -i "s#^Address.*#&, $IPv6Addr#g" "$WG0"
+        IPv6Addr="$IPv6Prefix$VAL/$IPv6Subnet"
+        sed -i "s/Address =.*/&, $IPv6Addr/g" "/etc/wireguard/$WG.conf"
     fi
     
-    # Print "Enable service\\n"
-    wg-quick up wg0 2>/dev/null
-    systemctl enable wg-quick@wg0
+    wg-quick up "$WG" 2>/dev/null
+    systemctl enable wg-quick@"$WG"
 
-    Print "Done, make sure $(GetConf port)/UDP is open\\n" "red"
+    Print "Done, make sure $(ReadConfig ListenPort $WG)/UDP is open\\n" "red"
 }
+###
 
-Prips() {
+PrintIPs() {
+    # PrintIPs 10.0.0.0/24
     BASE=${1%/*}
     MASKSIZE=${1#*/}
 
@@ -221,47 +250,36 @@ Prips() {
 }
 
 SetClientIPv4(){
-    for i in $(Prips "$(GetConf subnet)"); do
+    # SetClientIPv4 wg0
+    for i in $(PrintIPs "$(ReadConfig Address $1)"); do
         DEFAULT="$i"
-        grep -q "$i" $WG0 || break
+        grep -q "$i" "$1" || break
     done
 
-    Read "Choose client IPv4" "$DEFAULT"
+    ReadInput "Choose client IPv4" "$DEFAULT"
 }
 
 SetClientIPv6(){
-    VAL=$(head -c 2 /dev/random | od -A n -t x2 | tr -d " ") ## randomize IPv6
+    VAL=$(head -c 2 /dev/random | od -A n -t x2 | tr -d " ") # random
 }
 
-QR(){
-    CFG="$CONFIGFOLDER/$1/conf"
-    [ ! -f "$CFG" ] && Print "Client doesn't exist\\n" "red" && exit
-
-    Print "\\n$CFG\\n" "red"
+ShowQR(){
+    # ShowQR <wg_interface> <client_name>
     /usr/bin/qrencode -t ansiutf8 < "$CFG"
 }
 
 List(){
-    PUBKEYS=$(grep -i "publickey" "$WG0" | tr -d " " | cut -d "=" -f 2)
-    for i in $PUBKEYS; do
-        CLIENT=$(grep -r "$i" "$CONFIGFOLDER" | cut -d "/" -f 2)
-        IP=$(grep -i address "$CONFIGFOLDER/$CLIENT/conf" | cut -d "=" -f 2)
-        ISDISABLED=$(grep "$IP" /etc/wireguard/wg0.conf | grep -c -E "^#")
-        if [ "$ISDISABLED" -eq 1 ]; then
-            Print "$CLIENT,$IP,$i,[disabled]\\n" "gray"
-        else
-            Print "$CLIENT,$IP,$i\\n" "orange"
-        fi
-    done
+    # client names, IP, last connect/handshake
+    Print "aaa" "RED"
 }
 
 Add(){
     NAME="$2"
 
     [[ ! "$NAME" ]] && exit
-    [[ -d "$CONFIGFOLDER/$NAME" ]] && Print "Client already exists\\n" "red" && exit
+    # CHECK DUPLICATE CLIENT NAME
+    # GENERATE PK
 
-    mkdir "$CONFIGFOLDER/$NAME"
     GeneratePrivateKey
     GeneratePublicKey "$CONFIGFOLDER/$NAME" "$PRIVKEY"
 
@@ -284,7 +302,7 @@ Address = $CLIENT_IP/32
 PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
 EOF
 
-    Read "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
+    ReadInput "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
 
     PUBKEY=$(cat "$CONFIGFOLDER/pub.key")
     ENDPOINT="$(GetConf server):$(GetConf port)"
@@ -301,7 +319,7 @@ EOF
     if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
         SetClientIPv6 # set default
 
-        Read "Choose client IPv6" "$(GetConf IPv6Prefix)$VAL" && IPv6Addr="$VAL"
+        ReadInput "Choose client IPv6" "$(GetConf IPv6Prefix)$VAL" && IPv6Addr="$VAL"
 
         sed -i -e "s|^Address.*$|&, $IPv6Addr/128|g" \
         -e "s|^AllowedIPs.*$|&, ::/0|g" \
@@ -310,10 +328,10 @@ EOF
         sed -i "s|^AllowedIPs.*$|&, $IPv6Addr/128|g" "$TMP"
     fi
     
-    Read "Edit allowed IPs?" "y/N"
+    ReadInput "Edit allowed IPs?" "y/N"
     if [ "$VAL" == "y" ]; then
         ALLOWEDIPS=$(grep -i allowedips "$CONFIGFOLDER/$NAME/conf" | tr -d " " | cut -d "=" -f 2)
-        Read "Allowed IPs" "$ALLOWEDIPS"
+        ReadInput "Allowed IPs" "$ALLOWEDIPS"
         [ "$VAL" != "$ALLOWEDIPS" ] && sed -i "s|AllowedIPs = .*|AllowedIPs = $VAL|g" "$CONFIGFOLDER/$NAME/conf"
     fi
 
@@ -321,41 +339,22 @@ EOF
     cat "$TMP" >> "$WG0" && rm -rf "$TMP"
     wg addconf wg0 <(wg-quick strip wg0)
 
-    # show qr
     QR "$NAME"
 }
 
 Del(){
-    CFG="$CONFIGFOLDER/$2"
-    if [ -d "$CFG" ]; then
-        ENTRY=$(grep -m 1 -n "# $2" "$WG0" | cut -d ":" -f 1)
-        sed -ie "$ENTRY,$((ENTRY + 4))d" "$WG0"
-
-        wg set wg0 peer "$(cat "$CFG/pub.key")" remove
-        wg addconf wg0 <(wg-quick strip wg0)
-
-        rm -rf "$CFG"
-    else
-        Print "Client doesn't exist\\n" "red"
-    fi
+    # CHECK CLIENT EXISTENCE
+    # REMOVE CLIENT FROM CONFIG FILE
+    wg set wg0 peer "PUBKEY" remove
+    wg syncconf wg0 <(wg-quick strip wg0)
 }
 
 ModifyClientEntry(){
-    CFG="$CONFIGFOLDER/$1"
-    if [ -d "$CFG" ]; then
-        PUBKEY=$(cat "$CFG"/pub.key)
-        LINENUM=$(grep -n "$PUBKEY" "$WG0" | cut -d ':' -f 1)
-
-        if [ ! "$LINENUM" ]; then
-            Print "Cannot find public key in $WG0\\n" "red" && exit
-        fi
-
-        sed -i -e "$LINENUM $2" -e "$(( "$LINENUM" + 1 )) $2" -e "$(( "$LINENUM" - 1 )) $2" "$WG0"
-        wg set wg0 peer "$(cat "$CFG/pub.key")" remove
-        wg addconf wg0 <(wg-quick strip wg0)
-    else
-        Print "Client doesn't exist\\n" "red"
-    fi
+    # for enabling and disabling
+    # CHECK CLIENT EXISTENCE
+    # EDIT FILE
+    wg set wg0 peer "PUBKEY" remove
+    wg syncconf wg0 <(wg-quick strip wg0)
 }
 
 Run "$@"
