@@ -126,7 +126,7 @@ ReadConfig(){
 WriteConfig(){
     # WriteConfig section default_val wg0
     ReadInput "$1" "$2"
-    sed -i "s/$1 =.*/$1 = $VAL/g" "/etc/wireguard/$3.conf"
+    sed -i "s|$1 =.*|$1 = $VAL|g" "/etc/wireguard/$3.conf"
 }
 
 GeneratePublicKey(){
@@ -214,7 +214,7 @@ Install(){
         sed -i "s/Address =.*/&, $VAL/g" "/etc/wireguard/$WG.conf"
     fi
     
-    WriteConfig "Type" "$TYPE" "$WG"
+    sed -i "s/Type =.*/&, $TYPE/g" "/etc/wireguard/$WG.conf"
 
     wg-quick up "$WG" 2>/dev/null
     systemctl enable wg-quick@"$WG"
