@@ -132,3 +132,39 @@ ndppd.service is not a native service, redirecting to systemd-sysv-install.
 Executing: /lib/systemd/systemd-sysv-install enable ndppd
 Done, make sure 31407/UDP is open
 ```
+
+/etc/network/interfaces
+```
+auto ens3
+iface ens3 inet dhcp
+
+iface ens3 inet6 static
+        address 2a2a:fafa:caca:baba:caca::1 # this must be in another subnet of IPv6 Prefix
+        netmask 80
+```
+
+```
+root@vultr:~# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens3: <BROADCAST,MULTICAST,ALLMULTI,UP,LOWER_UP> mtu 1500 qdisc fq state UP group default qlen 1000
+    link/ether 56:00:03:d8:e7:8e brd ff:ff:ff:ff:ff:ff
+    inet 66.42.40.46/23 brd 66.42.41.255 scope global dynamic enp1s0
+       valid_lft 86391sec preferred_lft 86391sec
+    inet6 2a2a:fafa:caca:baba:caca::1/80 scope global 
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5400:3ff:fed8:e78e/64 scope link 
+       valid_lft forever preferred_lft forever
+3: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/none 
+    inet 10.10.0.1/24 scope global wg0
+       valid_lft forever preferred_lft forever
+    inet6 2a2a:fafa:caca:baba:dada::336c/80 scope global 
+       valid_lft forever preferred_lft forever
+```
+
+> 2a2a:fafa:caca:baba::1/64 shouldn't be assigned to ens3
