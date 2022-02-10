@@ -134,7 +134,7 @@ WriteConfig(){
 
 GeneratePublicKey(){
     # GeneratePublicKey privatekey
-    echo "$1" | /usr/bin/wg pubkey
+    /usr/bin/wg pubkey <<< "$1"
 }
 
 ### INSTALL ###
@@ -273,77 +273,39 @@ List(){
     Print "aaa" "RED"
 }
 
+WritePeerConfig(){
+    # WritePeerConfig section value file
+}
+
 Add(){
-    NAME="$2"
+    [[ ! "$2" ]] && exit # must specify client name
 
-    [[ ! "$NAME" ]] && exit
-    # CHECK DUPLICATE CLIENT NAME
-    # GENERATE PK
+    if [ "$(grep -i $2 /etc/wireguard/$3.conf)" ]; then
+        Print "Client already exists\\n" "red"
+        exit
+    fi
 
-    GeneratePrivateKey
-    GeneratePublicKey "$CONFIGFOLDER/$NAME" "$PRIVKEY"
-
-    SetClientIPv4 && CLIENT_IP="$VAL"
-
-    # appending server config
+    PRIVKEY="$(/usr/bin/wg genkey)"
     TMP=$(mktemp)
-    cat >>"$TMP" <<EOF 
-# $NAME
-[Peer]
-PublicKey = $(cat "$CONFIGFOLDER/$NAME/pub.key")
-AllowedIPs = $CLIENT_IP/32
+    curl -so "$TMP" "$TEMPLATEURL/peer.conf"
+    WritePeerConfig Alias "$2" "$TMP"
+    WritePeerConfig PrivateKey "$PRIVKEY" "$TMP"
+    WritePeerConfig PublicKey "$(/usr/bin/wg pubkey <<< $PRIVKEY)" "$TMP"
+    SetClientIPv4 && WritePeerConfig AllowedIPs "$VAL" "$TMP"
+    # add ipv6
 
-EOF
-
-    # generate client config
-    cat >"$CONFIGFOLDER/$NAME/conf" <<EOF
-[Interface]
-Address = $CLIENT_IP/32
-PrivateKey = $(cat "$CONFIGFOLDER/$NAME/priv.key")
-EOF
-
-    ReadInput "DNS" "none" && [ "$VAL" != "none" ] && echo "DNS = $VAL" >> "$CONFIGFOLDER/$NAME/conf"
-
-    PUBKEY=$(cat "$CONFIGFOLDER/pub.key")
-    ENDPOINT="$(GetConf server):$(GetConf port)"
-
-    cat >>"$CONFIGFOLDER/$NAME/conf" <<EOF
-
-[Peer]
-PublicKey = $PUBKEY
-Endpoint = $ENDPOINT
-AllowedIPs = 0.0.0.0/0
-EOF
-
-    # handle IPv6
-    if grep -q "IPv6Prefix" "$CONFIGFOLDER/conf"; then
-        SetClientIPv6 # set default
-
-        ReadInput "Choose client IPv6" "$(GetConf IPv6Prefix)$VAL" && IPv6Addr="$VAL"
-
-        sed -i -e "s|^Address.*$|&, $IPv6Addr/128|g" \
-        -e "s|^AllowedIPs.*$|&, ::/0|g" \
-        "$CONFIGFOLDER/$NAME/conf"
-
-        sed -i "s|^AllowedIPs.*$|&, $IPv6Addr/128|g" "$TMP"
-    fi
+    ReadInput "PreSharedKey" ""
+    WritePeerConfig PreSharedKey "$VAL" "$TMP"
     
-    ReadInput "Edit allowed IPs?" "y/N"
-    if [ "$VAL" == "y" ]; then
-        ALLOWEDIPS=$(grep -i allowedips "$CONFIGFOLDER/$NAME/conf" | tr -d " " | cut -d "=" -f 2)
-        ReadInput "Allowed IPs" "$ALLOWEDIPS"
-        [ "$VAL" != "$ALLOWEDIPS" ] && sed -i "s|AllowedIPs = .*|AllowedIPs = $VAL|g" "$CONFIGFOLDER/$NAME/conf"
-    fi
-
-    # write and apply new config
-    cat "$TMP" >> "$WG0" && rm -rf "$TMP"
-    wg addconf wg0 <(wg-quick strip wg0)
-
-    QR "$NAME"
+    # show generated config and ask user confirmation
+    # appending server config and apply new config
+    tee "$TMP" >> "/etc/wireguard/$3.conf" #&& rm -rf "$TMP"
+    wg addconf "$3" <(wg-quick strip "$3")
 }
 
 Del(){
     # CHECK CLIENT EXISTENCE
+    # prompt asking confirmation
     # REMOVE CLIENT FROM CONFIG FILE
     wg set wg0 peer "PUBKEY" remove
     wg syncconf wg0 <(wg-quick strip wg0)
@@ -353,6 +315,7 @@ ModifyClientEntry(){
     # for enabling and disabling
     # CHECK CLIENT EXISTENCE
     # EDIT FILE
+    # prompt asking confirmation
     wg set wg0 peer "PUBKEY" remove
     wg syncconf wg0 <(wg-quick strip wg0)
 }
