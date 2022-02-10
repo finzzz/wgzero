@@ -37,8 +37,9 @@ There are 2 types of connection:
 
 # Installation
 ```bash
-curl -sO https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
-chmod +x wgzero && ./wgzero install
+curl -o /usr/local/bin/wgzero https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
+chmod +x /usr/local/bin/wgzero
+wgzero install
 ```
 
 ## Example
