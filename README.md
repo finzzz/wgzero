@@ -132,3 +132,15 @@ ndppd.service is not a native service, redirecting to systemd-sysv-install.
 Executing: /lib/systemd/systemd-sysv-install enable ndppd
 Done, make sure 31407/UDP is open
 ```
+
+/etc/network/interfaces
+```
+auto ens3
+iface ens3 inet dhcp
+
+iface ens3 inet6 static
+        address 2a2a:fafa:caca:baba:caca::1 # this must be in another subnet of IPv6 Prefix
+        netmask 80
+```
+
+> 2a2a:fafa:caca:baba::1/64 shouldn't be assigned to ens3
