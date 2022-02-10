@@ -1,9 +1,7 @@
 #! /usr/bin/env bash
 
-WG_DIR="/etc/wireguard/"
 PORT=$(shuf -n 1 -i 10000-65535)
-# IPv6Prefix="fd00::"
-TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
+TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/0.3/template/"
 
 GRAY="$(tput setaf 8)"
 RED="$(tput setaf 1)"
@@ -23,30 +21,29 @@ Run(){
         Install ;;
     "import")
         # ./wgzero import wg0.conf
-        Import "$@" ;;
+        Print "Unimplemented" "RED" ;;
     "list")
         # ./wgzero list <wg_interface=wg0>
-        List | column -t -s, 2>/dev/null
-        echo -en "${NC}" ;;
+        Print "Unimplemented" "RED" ;;
     "add")
         # ./wgzero add <client_name> <wg_interface=wg0>
         Add "$@" ;;
     "del")
         # ./wgzero delete <client_name> <wg_interface=wg0>
-        Del "$@" ;;
+        Edit "delete" "$2" "$3" ;;
     "edit")
         # ./wgzero edit server <wg_interface=wg0>
         # ./wgzero edit <client_name> <wg_interface=wg0>
-        Edit "$@" ;;
+        Print "Unimplemented" "RED" ;;
     "enable")
         # ./wgzero enable <client_name> <wg_interface=wg0>
-        ModifyClientEntry "$2" "s/^#//" ;;
+        Edit "enable" "$2" "$3" ;;
     "disable")
         # ./wgzero disable <client_name> <wg_interface=wg0>
-        ModifyClientEntry "$2" "s/^[^#]./#&/" ;;
+        Edit "disable" "$2" "$3" ;;
     "qr")
         # ./wgzero qr <client_name> <wg_interface=wg0>
-        ShowQR "$2" ;;
+        Print "Unimplemented" "RED" ;;
     "postup")
         # ./wgzero postup <wg_interface>
         INTERFACE="eth0"
@@ -190,8 +187,8 @@ Install(){
         WriteConfig "IPv6 Prefix" "fd00::" "$WG"
         WriteConfig "IPv6 Subnet" "64" "$WG"
 
-        IPv6Prefix="$(ReadConfig 'IPv6 Prefix' $WG)"
-        IPv6Subnet="$(ReadConfig 'IPv6 Subnet' $WG)"
+        IPv6Prefix=$(ReadConfig 'IPv6 Prefix' "$WG")
+        IPv6Subnet=$(ReadConfig 'IPv6 Subnet' "$WG")
 
         Print "External routing: \\n" "orange"
         Print "[1] NAT\\n" "cyan"
@@ -213,15 +210,16 @@ Install(){
             fi
         fi
 
-        SetClientIPv6
-        IPv6Addr="$IPv6Prefix$VAL/$IPv6Subnet"
-        sed -i "s/Address =.*/&, $IPv6Addr/g" "/etc/wireguard/$WG.conf"
+        SetClientIPv6 "$IPv6Prefix" "$IPv6Subnet"
+        sed -i "s/Address =.*/&, $VAL/g" "/etc/wireguard/$WG.conf"
     fi
     
+    WriteConfig "Type" "$TYPE" "$WG"
+
     wg-quick up "$WG" 2>/dev/null
     systemctl enable wg-quick@"$WG"
 
-    Print "Done, make sure $(ReadConfig ListenPort $WG)/UDP is open\\n" "red"
+    Print "Done, make sure $(ReadConfig ListenPort "$WG")/UDP is open\\n" "red"
 }
 ###
 
@@ -251,7 +249,7 @@ PrintIPs() {
 
 SetClientIPv4(){
     # SetClientIPv4 wg0
-    for i in $(PrintIPs "$(ReadConfig Address $1)"); do
+    for i in $(PrintIPs "$(ReadConfig Address "$1")"); do
         DEFAULT="$i"
         grep -q "$i" "$1" || break
     done
@@ -260,64 +258,99 @@ SetClientIPv4(){
 }
 
 SetClientIPv6(){
-    VAL=$(head -c 2 /dev/random | od -A n -t x2 | tr -d " ") # random
+    # SetClientIPv6 prefix subnet
+    VAL="$1$(head -c 2 /dev/random | od -A n -t x2 | tr -d ' ')/$2"
 }
 
 ShowQR(){
     # ShowQR <wg_interface> <client_name>
-    /usr/bin/qrencode -t ansiutf8 < "$CFG"
+    # /usr/bin/qrencode -t ansiutf8 < "$CFG"
+    Print "Unimplemented" "RED"
 }
 
 List(){
     # client names, IP, last connect/handshake
-    Print "aaa" "RED"
+    Print "Unimplemented" "RED"
 }
 
 WritePeerConfig(){
     # WritePeerConfig section value file
+    sed -i "s/$1 =.*/$1 = $2/g" "$3"
 }
 
 Add(){
     [[ ! "$2" ]] && exit # must specify client name
 
-    if [ "$(grep -i $2 /etc/wireguard/$3.conf)" ]; then
-        Print "Client already exists\\n" "red"
-        exit
+    if grep -qi "$2" "/etc/wireguard/$3.conf" ; then
+        Print "Client already exists\\n" "red" && exit
     fi
 
-    PRIVKEY="$(/usr/bin/wg genkey)"
+    PRIVKEY="$(wg genkey)"
     TMP=$(mktemp)
     curl -so "$TMP" "$TEMPLATEURL/peer.conf"
     WritePeerConfig Alias "$2" "$TMP"
     WritePeerConfig PrivateKey "$PRIVKEY" "$TMP"
-    WritePeerConfig PublicKey "$(/usr/bin/wg pubkey <<< $PRIVKEY)" "$TMP"
-    SetClientIPv4 && WritePeerConfig AllowedIPs "$VAL" "$TMP"
-    # add ipv6
+    WritePeerConfig PublicKey "$(wg pubkey <<< "$PRIVKEY")" "$TMP"
 
-    ReadInput "PreSharedKey" ""
-    WritePeerConfig PreSharedKey "$VAL" "$TMP"
-    
-    # show generated config and ask user confirmation
-    # appending server config and apply new config
-    tee "$TMP" >> "/etc/wireguard/$3.conf" #&& rm -rf "$TMP"
+    SetClientIPv4 "$3" && WritePeerConfig AllowedIPs "$VAL" "$TMP"
+
+    if [ "$(ReadConfig Type "$3")" != "v4" ]; then
+        SetClientIPv6 "$IPv6Prefix" "$IPv6Subnet"
+        ReadInput "Choose client IPv6" "$VAL"
+        sed -i "s/Address =.*/&, $VAL/g" "$TMP"
+    fi
+
+    ReadInput "Generate Pre-Shared Key?" "y/N"
+    if [ "$VAL" == "y" ]; then
+        WritePeerConfig PreSharedKey "$(wg genpsk)" "$TMP"
+    fi
+
+    cat "$TMP" 
+    ReadInput "Add the following client?" "Y/n"
+    if [ "$VAL" == "n" ]; then
+        rm -rf "$TMP" && exit
+    fi
+
+    cat "$TMP" >> "/etc/wireguard/$3.conf" && rm -rf "$TMP"
     wg addconf "$3" <(wg-quick strip "$3")
 }
 
-Del(){
-    # CHECK CLIENT EXISTENCE
-    # prompt asking confirmation
-    # REMOVE CLIENT FROM CONFIG FILE
-    wg set wg0 peer "PUBKEY" remove
-    wg syncconf wg0 <(wg-quick strip wg0)
-}
+Edit(){
+    # Edit delete/enable/disable client_name wg0
+    if grep -qvi "$2" "/etc/wireguard/$3.conf" ; then
+        Print "Client doesn't exist\\n" "red" && exit
+    fi
 
-ModifyClientEntry(){
-    # for enabling and disabling
-    # CHECK CLIENT EXISTENCE
-    # EDIT FILE
-    # prompt asking confirmation
-    wg set wg0 peer "PUBKEY" remove
-    wg syncconf wg0 <(wg-quick strip wg0)
+    CLIENTS=( "$(grep -nE '^\[Peer\]$|## CLIENT ##' "/etc/wireguard/$3.conf" | cut -d ':' -f 1)" )
+    for (( i=0;i<${#CLIENTS[@]}-1;i+=2 )); do 
+        CLIENT_BLOCK=$(sed -n "${CLIENTS[$i]},${CLIENTS[(($i+1))]}p" /etc/wireguard/"$3".conf)
+
+        if grep -qi "$2" <<< "$CLIENT_BLOCK" ; then
+            cat "$CLIENT_BLOCK"
+            PUBKEY=$(cat < "$CLIENT_BLOCK" | grep PublicKey | cut -d '=' -f 2 | tr -d ' ')
+
+            case "$1" in
+            "delete")
+                ReadInput "Remove the following client?" "Y/n"
+                [ "$VAL" == "n" ] && exit
+                sed -i "${CLIENTS[$i]},${CLIENTS[(($i+1))]},d" "/etc/wireguard/$3.conf"
+                ;;
+            "disable")
+                ReadInput "Disable the following client?" "Y/n"
+                [ "$VAL" == "n" ] && exit
+                sed -i -e "${CLIENTS[$i]},${CLIENTS[(($i+1))]}s/^/# /g" "/etc/wireguard/$3.conf"
+                ;;
+            "enable")
+                ReadInput "Enable the following client?" "Y/n"
+                [ "$VAL" == "n" ] && exit
+                sed -i -e "${CLIENTS[$i]},${CLIENTS[(($i+1))]}s/^# //g" "/etc/wireguard/$3.conf"
+                ;;
+            esac
+
+            wg set wg0 peer "$PUBKEY" remove
+            wg syncconf wg0 <(wg-quick strip wg0)
+        fi
+    done    
 }
 
 Run "$@"
