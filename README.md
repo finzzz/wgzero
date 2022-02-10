@@ -151,7 +151,7 @@ root@vultr:~# ip a
        valid_lft forever preferred_lft forever
     inet6 ::1/128 scope host 
        valid_lft forever preferred_lft forever
-2: enp1s0: <BROADCAST,MULTICAST,ALLMULTI,UP,LOWER_UP> mtu 1500 qdisc fq state UP group default qlen 1000
+2: ens3: <BROADCAST,MULTICAST,ALLMULTI,UP,LOWER_UP> mtu 1500 qdisc fq state UP group default qlen 1000
     link/ether 56:00:03:d8:e7:8e brd ff:ff:ff:ff:ff:ff
     inet 66.42.40.46/23 brd 66.42.41.255 scope global dynamic enp1s0
        valid_lft 86391sec preferred_lft 86391sec
