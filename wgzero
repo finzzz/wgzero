@@ -309,8 +309,8 @@ Add(){
     SetClientIPv4 "$WG" && WriteClientConfig AllowedIPs "$VAL/32" "$TMP"
 
     if [ "$(ReadConfig Type "$WG")" != "v4" ]; then
-        IPv6Prefix=$(ReadConfig 'IPv6 Prefix' $WG)
-        IPv6Subnet=$(ReadConfig 'IPv6 Subnet' $WG)
+        IPv6Prefix=$(ReadConfig 'IPv6 Prefix' "$WG")
+        IPv6Subnet=$(ReadConfig 'IPv6 Subnet' "$WG")
         SetClientIPv6 "$IPv6Prefix"
         ReadInput "Choose client IPv6" "$VAL"
         sed -i "s|AllowedIPs =.*|&,$VAL|g" "$TMP"
@@ -347,25 +347,25 @@ Client(){
         sed -n "$START,$END p" /etc/wireguard/"$WG".conf > "$CLIENT_BLOCK"
 
         if grep -qi "$ALIAS" "$CLIENT_BLOCK" ; then
-            PUBKEY=$(cat "$CLIENT_BLOCK" | grep PublicKey | cut -d '=' -f 2- | tr -d ' ')
+            PUBKEY=$(grep PublicKey "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
             case "$1" in
             "show")
                 TMP=$(mktemp)
                 curl -so "$TMP" "$TEMPLATEURL/client.conf"
 
                 # client
-                WriteClientConfig Address "$(ReadClientConfig AllowedIPs $CLIENT_BLOCK)" "$TMP"
-                WriteClientConfig PrivateKey "$(ReadClientConfig PrivateKey $CLIENT_BLOCK)" "$TMP"
-                WriteClientConfig MTU "$(ReadConfig 'Client MTU' $WG)" "$TMP"
-                DNS="$(ReadConfig DNS $WG)" && [ "$DNS" != "unset" ] && WriteClientConfig DNS "$DNS" "$TMP" uncomment
+                WriteClientConfig Address "$(ReadClientConfig AllowedIPs "$CLIENT_BLOCK")" "$TMP"
+                WriteClientConfig PrivateKey "$(ReadClientConfig PrivateKey "$CLIENT_BLOCK")" "$TMP"
+                WriteClientConfig MTU "$(ReadConfig 'Client MTU' "$WG")" "$TMP"
+                DNS="$(ReadConfig DNS "$WG")" && [ "$DNS" != "unset" ] && WriteClientConfig DNS "$DNS" "$TMP" uncomment
 
                 # server
-                WriteClientConfig PublicKey "$(ReadConfig PrivateKey $WG | wg pubkey)" "$TMP" 
-                WriteClientConfig Endpoint "$(ReadConfig Endpoint $WG):$(ReadConfig ListenPort $WG)" "$TMP"
+                WriteClientConfig PublicKey "$(ReadConfig PrivateKey "$WG" | wg pubkey)" "$TMP" 
+                WriteClientConfig Endpoint "$(ReadConfig Endpoint "$WG"):$(ReadConfig ListenPort "$WG")" "$TMP"
                 WriteClientConfig AllowedIPs "0.0.0.0/0" "$TMP"
-                grep -qi '^# PresharedKey' "$CLIENT_BLOCK" || WriteClientConfig PresharedKey "$(ReadClientConfig PresharedKey $CLIENT_BLOCK)" "$TMP" uncomment
-                KeepAlive="$(ReadConfig KeepAlive $WG)" && [ "$KeepAlive" != "unset" ] && WriteClientConfig PersistentKeepalive "$KeepAlive" "$TMP" uncomment
-                TYPE="$(ReadConfig Type $WG)" && [ "$TYPE" != "v4" ] && WriteClientConfig AllowedIPs "0.0.0.0/0,::/0"
+                grep -qi '^# PresharedKey' "$CLIENT_BLOCK" || WriteClientConfig PresharedKey "$(ReadClientConfig PresharedKey "$CLIENT_BLOCK")" "$TMP" uncomment
+                KeepAlive=$(ReadConfig KeepAlive "$WG") && [ "$KeepAlive" != "unset" ] && WriteClientConfig PersistentKeepalive "$KeepAlive" "$TMP" uncomment
+                TYPE=$(ReadConfig Type "$WG") && [ "$TYPE" != "v4" ] && WriteClientConfig AllowedIPs "0.0.0.0/0,::/0"
                 cat "$TMP" && echo "" && rm -rf "$TMP" "$CLIENT_BLOCK" && exit
                 ;;
             "delete")
