@@ -21,9 +21,23 @@ Run(){
     "install")
         # wgzero install
         Install ;;
-    "import") # priority
+    "uninstall")
+        # wgzero uninstall <wg_interface>
+        ReadInput "Uninstall $3" "y/N"
+        if [ "$VAL" == "y" ]; then
+            wg-quick down "$VAL" 2>/dev/null
+            rm -rf "/etc/wireguard/$VAL.conf"
+        fi
+        ;;
+    "import")
         # wgzero import wg0.conf
-        Print "Unimplemented" "RED" ;;
+        WG_INTERFACE=$(basename "$2" .conf)
+        cp "$2" /etc/wireguard/
+        wg-quick up "$WG_INTERFACE" 2>/dev/null
+        systemctl enable wg-quick@"$WG_INTERFACE"
+
+        Print "Done, make sure $(ReadConfig ListenPort "$WG")/UDP is open\\n" "red"
+        ;;
     "list")
         # wgzero list <wg_interface=wg0>
         Print "Unimplemented" "RED" ;;
@@ -34,7 +48,7 @@ Run(){
         # wgzero delete <client_name> <wg_interface=wg0>
         Client "delete" "$2" "$WG_INTERFACE" ;;
     "reload")
-        # wgzero edit <wg_interface=wg0>
+        # wgzero reload <wg_interface=wg0>
         Print "Unimplemented" "RED" ;;
     "enable")
         # wgzero enable <client_name> <wg_interface=wg0>
