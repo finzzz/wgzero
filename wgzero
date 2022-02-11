@@ -17,40 +17,44 @@ Run(){
 
     case "$1" in
     "install")
-        # ./wgzero install
+        # wgzero install
         Install ;;
     "import")
-        # ./wgzero import wg0.conf
+        # wgzero import wg0.conf
         Print "Unimplemented" "RED" ;;
     "list")
-        # ./wgzero list <wg_interface=wg0>
+        # wgzero list <wg_interface=wg0>
         Print "Unimplemented" "RED" ;;
     "add")
-        # ./wgzero add <client_name> <wg_interface=wg0>
+        # wgzero add <client_name> <wg_interface=wg0>
         WG_INTERFACE=${3-wg0}
         Add "$2" "$WG_INTERFACE";;
     "del")
-        # ./wgzero delete <client_name> <wg_interface=wg0>
+        # wgzero delete <client_name> <wg_interface=wg0>
         WG_INTERFACE=${3-wg0}
-        Edit "delete" "$2" "$WG_INTERFACE" ;;
+        Client "delete" "$2" "$WG_INTERFACE" ;;
     "edit")
-        # ./wgzero edit server <wg_interface=wg0>
-        # ./wgzero edit <client_name> <wg_interface=wg0>
+        # wgzero edit server <wg_interface=wg0>
+        # wgzero edit <client_name> <wg_interface=wg0>
         Print "Unimplemented" "RED" ;;
     "enable")
-        # ./wgzero enable <client_name> <wg_interface=wg0>
+        # wgzero enable <client_name> <wg_interface=wg0>
         WG_INTERFACE=${3-wg0}
-        Edit "enable" "$2" "$WG_INTERFACE" ;;
+        Client "enable" "$2" "$WG_INTERFACE" ;;
     "disable")
-        # ./wgzero disable <client_name> <wg_interface=wg0>
+        # wgzero disable <client_name> <wg_interface=wg0>
         WG_INTERFACE=${3-wg0}
-        Edit "disable" "$2" "$WG_INTERFACE" ;;
-    "show") # priority
-        # ./wgzero show config <client_name> <wg_interface=wg0>
-        # ./wgzero show qr <client_name> <wg_interface=wg0>
-        Print "Unimplemented" "RED" ;;
+        Client "disable" "$2" "$WG_INTERFACE" ;;
+    "show")
+        # wgzero show <client_name> <wg_interface=wg0>
+        WG_INTERFACE=${3-wg0}
+        Client show "$2" "$WG_INTERFACE" ;;
+    "qr")
+        # wgzero qr <client_name> <wg_interface=wg0>
+        WG_INTERFACE=${3-wg0}
+        Client show "$2" "$WG_INTERFACE" | qrencode -t ansiutf8 ;;
     "postup")
-        # ./wgzero postup <wg_interface>
+        # wgzero postup <wg_interface>
         WG_INTERFACE=${3-wg0}
         INTERFACE=$(ReadConfig Interface "$WG_INTERFACE")
         TYPE=$(ReadConfig Type "$WG_INTERFACE")
@@ -62,7 +66,7 @@ Run(){
         fi
         ;;
     "postdown")
-        # ./wgzero postdown <wg_interface>
+        # wgzero postdown <wg_interface>
         WG_INTERFACE=${3-wg0}
         INTERFACE=$(ReadConfig Interface "$WG_INTERFACE")
         TYPE=$(ReadConfig Type "$WG_INTERFACE")
@@ -177,7 +181,7 @@ Install(){
     WriteConfig "ListenPort" "$PORT" "$WG"
     WriteConfig "Address" "10.10.0.1/24" "$WG"
     WriteConfig "MTU" "1420" "$WG"
-    WriteConfig "Client MTU" "unset" "$WG"
+    WriteConfig "Client MTU" "1384" "$WG"
     WriteConfig "DNS" "unset" "$WG"
     WriteConfig "KeepAlive" "unset" "$WG"
 
@@ -281,9 +285,18 @@ List(){
     Print "Unimplemented" "RED"
 }
 
-WritePeerConfig(){
-    # WritePeerConfig section value file
+WriteClientConfig(){
+    # WriteClientConfig section value file uncomment
     sed -i "s|$1 =.*|$1 = $2|g" "$3"
+
+    if [ "$4" == "uncomment" ];then
+        sed -i "s|^# $1|$1|g" "$3"
+    fi
+}
+
+ReadClientConfig(){
+    # ReadClientConfig section blocks
+    grep -i "$1" <<< "$2" | cut -d '=' -f 2- | td -d ' '
 }
 
 Add(){
@@ -296,11 +309,11 @@ Add(){
     PRIVKEY="$(wg genkey)"
     TMP=$(mktemp)
     curl -so "$TMP" "$TEMPLATEURL/peer.conf"
-    WritePeerConfig Alias "$2" "$TMP"
-    WritePeerConfig PrivateKey "$PRIVKEY" "$TMP"
-    WritePeerConfig PublicKey "$(wg pubkey <<< "$PRIVKEY")" "$TMP"
+    WriteClientConfig Alias "$2" "$TMP"
+    WriteClientConfig PrivateKey "$PRIVKEY" "$TMP"
+    WriteClientConfig PublicKey "$(wg pubkey <<< "$PRIVKEY")" "$TMP"
 
-    SetClientIPv4 "$3" && WritePeerConfig AllowedIPs "$VAL" "$TMP"
+    SetClientIPv4 "$3" && WriteClientConfig AllowedIPs "$VAL" "$TMP"
 
     if [ "$(ReadConfig Type "$3")" != "v4" ]; then
         SetClientIPv6 "$IPv6Prefix" "$IPv6Subnet"
@@ -310,8 +323,7 @@ Add(){
 
     ReadInput "Generate Pre-Shared Key?" "y/N"
     if [ "$VAL" == "y" ]; then
-        WritePeerConfig PreSharedKey "$(wg genpsk)" "$TMP"
-        sed -i "s|# PreSharedKey|PreSharedKey|g" "$TMP"
+        WriteClientConfig PreSharedKey "$(wg genpsk)" "$TMP" uncomment
     fi
 
     cat "$TMP" 
@@ -324,7 +336,7 @@ Add(){
     wg addconf "$3" <(wg-quick strip "$3")
 }
 
-Edit(){
+Client(){
     [[ ! "$2" ]] && [[ ! "$3" ]] && exit # must specify client name and wg interface
     if ! grep -qi "Alias = $2" "/etc/wireguard/$3.conf" ; then
         Print "Client doesn't exist\\n" "red" && exit
@@ -339,6 +351,24 @@ Edit(){
         if grep -qi "$2" <<< "$CLIENT_BLOCK" ; then
             PUBKEY=$(echo "$CLIENT_BLOCK" | grep PublicKey | cut -d '=' -f 2- | tr -d ' ')
             case "$1" in
+            "show")
+                TMP=$(mktemp)
+                curl -so "$TMP" "$TEMPLATEURL/client.conf"
+
+                # client
+                WriteClientConfig Address "$(ReadClientConfig Address $CLIENT_BLOCK)" "$TMP"
+                WriteClientConfig PrivateKey "$(ReadClientConfig PrivateKey $CLIENT_BLOCK)" "$TMP"
+                WriteClientConfig MTU "$(ReadConfig 'Client MTU' $3)" "$TMP"
+                DNS="$(ReadConfig DNS $3)" && [ "$DNS" != "" ] && WriteClientConfig DNS "$DNS" "$TMP" uncomment
+
+                # server
+                WriteClientConfig PublicKey "$(ReadConfig PrivateKey $3 | wg pubkey)" "$TMP" 
+                WriteClientConfig Endpoint "$(ReadConfig Endpoint $3):$(ReadConfig ListenPort $3)" "$TMP"
+                WriteClientConfig AllowedIPs "0.0.0.0/0" "$TMP"
+                grep -qi '^# PresharedKey' <<< "$CLIENT_BLOCK" || WriteClientConfig PresharedKey "$(ReadClientConfig PresharedKey $CLIENT_BLOCK)" "$TMP" 
+                KeepAlive="$(ReadConfig KeepAlive $3)" && [ "$KeepAlive" != "" ] && WriteClientConfig PersistentKeepalive "$KeepAlive" "$TMP" uncomment
+                rm -rf "$TMP" && exit
+                ;;
             "delete")
                 echo "$CLIENT_BLOCK"
                 ReadInput "Remove the following client?" "Y/n"
