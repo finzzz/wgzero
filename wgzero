@@ -39,17 +39,16 @@ Run(){
         Print "Done, make sure $(ReadConfig ListenPort "$WG")/UDP is open\\n" "red"
         ;;
     "list")
-        # wgzero list <wg_interface=wg0>
-        Print "Unimplemented" "RED" ;;
+        # wgzero list <wg_interface>
+        WG_INTERFACE="$2"
+        [ "$2" == "" ] && WG_INTERFACE="wg0"
+        List "$WG_INTERFACE" ;;
     "add")
         # wgzero add <client_name> <wg_interface=wg0>
-        Add "$2" "$WG_INTERFACE";;
+        Add "$2" "$WG_INTERFACE" ;;
     "del")
         # wgzero delete <client_name> <wg_interface=wg0>
         Client "delete" "$2" "$WG_INTERFACE" ;;
-    "reload")
-        # wgzero reload <wg_interface=wg0>
-        Print "Unimplemented" "RED" ;;
     "enable")
         # wgzero enable <client_name> <wg_interface=wg0>
         Client "enable" "$2" "$WG_INTERFACE" ;;
@@ -285,11 +284,6 @@ SetClientIPv6(){
     VAL="$1$(head -c 2 /dev/random | od -A n -t x2 | tr -d ' ')/128"
 }
 
-List(){
-    # client names, IP, last connect/handshake
-    Print "Unimplemented" "RED"
-}
-
 WriteClientConfig(){
     # WriteClientConfig section value file uncomment
     sed -i "s|$1 =.*|$1 = $2|g" "$3"
@@ -415,6 +409,29 @@ Client(){
             wg syncconf "$WG" <(wg-quick strip "$WG")
         fi
     done    
+}
+
+List(){
+    # List wg0
+    WG="$1"
+    mapfile -t CLIENTS < <(grep -nE '\[Peer\]$|## CLIENT ##' "/etc/wireguard/$WG.conf" | cut -d ':' -f 1)
+    for (( i=0;i<${#CLIENTS[@]}-1;i+=2 )); do 
+        START="${CLIENTS[$i]}"
+        END="${CLIENTS[(($i+1))]}"
+        CLIENT_BLOCK=$(mktemp)
+        sed -n "$START,$END p" /etc/wireguard/"$WG".conf > "$CLIENT_BLOCK"
+
+        ALIAS=$(grep Alias "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+        PUBKEY=$(grep PublicKey "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+        IP=$(grep AllowedIPs "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+        if grep -qE "^# \[Peer\]" "$CLIENT_BLOCK"; then
+            Print "$ALIAS,$PUBKEY,$IP" "gray" | column -t -s, 2>/dev/null
+        else
+            Print "$ALIAS,$PUBKEY,$IP" "orange" | column -t -s, 2>/dev/null
+        fi
+    done
+
+    rm -rf "$CLIENT_BLOCK"
 }
 
 Run "$@"
