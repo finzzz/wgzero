@@ -1,7 +1,7 @@
 # WGZero
 Zero overhead wireguard setup. Tested on Debian 10.
 
-# Table of contents
+## Table of contents
 - [Requirements](#requirements)
     - [Packages](#Packages)
     - [IPv6](#ipv6)
@@ -11,21 +11,21 @@ Zero overhead wireguard setup. Tested on Debian 10.
 - [Other Commands](#other-commands)
 - [FAQ, troubleshoot, etc.](#faq--troubleshoot--etc)
 
-# Requirements
-## Packages
+## Requirements
+### Packages
 [wireguard](https://www.wireguard.com/install/) curl qrencode iptables jq
 
-## IPv6
+### IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
 
 There are 2 types of connection:
-### NAT
+#### NAT
 - Internal IPv6 communication uses ULA (Unique Local Address).
 - Will prioritize on using public IPv6 (shared with all clients) and fallback to IPv4 when not available.
 - You need to have IPv6 address similar to `2001::a:b:c:d/64`.
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
 
-### Full Routing
+#### Full Routing
 - Assign unique public IPv6 to each clients.
 - I have tested this feature on Linode, [Hetzner, and Vultr (need ndppd)](#Full-IPv6-routing-on-Hetzner-and-Vultr).
 - You need to have IPv6 address similar to `2001:a:b:c::/64`.
@@ -35,14 +35,14 @@ There are 2 types of connection:
   Except with tunnelbroker default configuration.
 <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
 
-# Installation
+## Installation
 ```bash
 curl -o /usr/local/bin/wgzero https://raw.githubusercontent.com/finzzz/wgzero/master/wgzero
 chmod +x /usr/local/bin/wgzero
 wgzero install
 ```
 
-## Example
+### Example
 ```
 root@vultr:~# ./wgzero install
 Config folder .wgzero already exists, do you want to overwrite [y/N]: y
@@ -58,18 +58,21 @@ Done, make sure 63350/UDP is open
 ```
 
 
-# Other Commands
+### Other Commands
 ```
-wgzero list
-wgzero add clientname
-wgzero del clientname
-wgzero qr clientname
-wgzero enable clientname
-wgzero disable clientname
+wgzero install
+wgzero uninstall <wg_interface>
+wgzero import wg0.conf
+
+wgzero show clientname <wg_interface> # default wg0
+wgzero qr clientname <wg_interface> # default wg0
+wgzero enable clientname <wg_interface> # default wg0
+wgzero disable clientname <wg_interface> # default wg0
+wgzero del clientname <wg_interface> # default wg0
 ```
 
-# FAQ, troubleshoot, etc.
-## Initial steps on debian
+## FAQ, troubleshoot, etc.
+### Initial steps on debian
 ```bash
 echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
 apt update && apt upgrade
@@ -77,10 +80,10 @@ apt install linux-headers-$(uname -r) wireguard curl qrencode iptables jq
 # replace linux-headers-$(uname -r) with linux-headers-amd64 if errors
 ```
 
-## Running alongside Pihole  
+### Running alongside Pihole  
 Run `pihole restartdns` after setup
 
-## Usage with UFW
+### Usage with UFW
 Suppose wireguard port is `51820` and gateway interface is `eth0`.
 ```bash
 # 1. Allow incoming udp port
@@ -93,16 +96,16 @@ ufw route allow in on wg0 out on eth0
 ufw default allow routed
 ```
 
-## Full IPv6 routing on Hetzner and Vultr
+### Full IPv6 routing on Hetzner and Vultr
 ***Install ndppd before proceeding***
 
-### Hetzner
+#### Hetzner
 By default, hetzner allocated a block of IPv6, such as `2a2a:fafa:caca:baba::/64`.  
 But address `2a2a:fafa:caca:baba::1/64` is attached to the default network.  
 So, in order for this to work, we need to split this block into smaller one.  
 In this example, I will arbitrarily use `2a2a:fafa:caca:baba:dada::/80`.  
 
-### Vultr
+#### Vultr
 Similar to hetzner, if you enabled IPv6, you can go to `Settings -> IPv6` section.  
 The entry should be similar to this,  
 | Address                   | Network               | Netmask | Default Gateway        |
@@ -110,7 +113,7 @@ The entry should be similar to this,
 | 2a2a:fafa:caca:baba::abcd | 2a2a:fafa:caca:baba:: | 64      | (use router discovery) |
 
 
-### Example
+#### Example
 ```
 root@vultr:~# ./wgzero install
 Config folder .wgzero already exists, do you want to overwrite [y/N]: y
