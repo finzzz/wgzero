@@ -1,6 +1,5 @@
 #! /usr/bin/env bash
 
-PORT=$(shuf -n 1 -i 10000-65535)
 TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/0.3/template"
 
 GRAY="$(tput setaf 8)"
@@ -42,7 +41,7 @@ Run(){
         # wgzero list <wg_interface>
         WG_INTERFACE="$2"
         [ "$2" == "" ] && WG_INTERFACE="wg0"
-        List "$WG_INTERFACE" ;;
+        Client "list" "$WG_INTERFACE" ;;
     "add")
         # wgzero add <client_name> <wg_interface=wg0>
         Add "$2" "$WG_INTERFACE" ;;
@@ -119,6 +118,7 @@ EnableIPForward(){
 }
 ###
 
+### UTILS ###
 Print(){
     case "$2" in
     "red")
@@ -133,23 +133,7 @@ Print(){
         echo -en "${GREEN}$1${NC}";;
     esac
 }
-
-ReadInput(){
-    read -rp "${ORANGE}$1 [$2]: ${NC}" VAL
-    VAL=${VAL:-"$2"}
-}
-
-ReadConfig(){
-    # ReadConfig section wg0
-    SECTION=$(grep -n "## SERVER ##" "/etc/wireguard/$2.conf" | cut -d ":" -f 1)
-    sed -n "1,$SECTION p" "/etc/wireguard/$2.conf" | grep -i "$1 = " | cut -d "=" -f 2- | tr -d " "
-}
-
-WriteConfig(){
-    # WriteConfig section default_val wg0
-    ReadInput "$1" "$2"
-    sed -i "s|$1 =.*|$1 = $VAL|g" "/etc/wireguard/$3.conf"
-}
+######
 
 ### INSTALL ###
 GenerateConfig(){
@@ -158,6 +142,7 @@ GenerateConfig(){
     if [ -f "$CFG" ]; then
         ReadInput "Config file $CFG already exists, do you want to overwrite" "y/N"
         if [ "$VAL" == "y" ]; then
+            wg-quick down "$1"
             rm "$CFG"
             ip link del "$1" 2>/dev/null
         else
@@ -184,7 +169,7 @@ Install(){
     GenerateConfig "$WG"
     SetInterface "$WG"
     WriteConfig "Endpoint" "$(curl -s ip.me)" "$WG"
-    WriteConfig "ListenPort" "$PORT" "$WG"
+    WriteConfig "ListenPort" "$(shuf -n 1 -i 10000-65535)" "$WG"
     WriteConfig "Address" "10.10.0.1/24" "$WG"
     WriteConfig "MTU" "1420" "$WG"
     WriteConfig "Client MTU" "1384" "$WG"
@@ -238,8 +223,28 @@ Install(){
 
     Print "Done, make sure $(ReadConfig ListenPort "$WG")/UDP is open\\n" "red"
 }
-###
+######
 
+### SERVER CONFIG ###
+ReadInput(){
+    read -rp "${ORANGE}$1 [$2]: ${NC}" VAL
+    VAL=${VAL:-"$2"}
+}
+
+ReadConfig(){
+    # ReadConfig section wg0
+    SECTION=$(grep -n "## SERVER ##" "/etc/wireguard/$2.conf" | cut -d ":" -f 1)
+    sed -n "1,$SECTION p" "/etc/wireguard/$2.conf" | grep -i "$1 = " | cut -d "=" -f 2- | tr -d " "
+}
+
+WriteConfig(){
+    # WriteConfig section default_val wg0
+    ReadInput "$1" "$2"
+    sed -i "s|$1 =.*|$1 = $VAL|g" "/etc/wireguard/$3.conf"
+}
+######
+
+### Client Config ###
 PrintIPs() {
     # PrintIPs 10.0.0.0/24
     BASE=${1%/*}
@@ -297,6 +302,7 @@ ReadClientConfig(){
     # ReadClientConfig section blocks
     grep -i "$1" "$2" | cut -d '=' -f 2- | tr -d ' '
 }
+######
 
 Add(){
     [[ "$1" == "" ]] && exit # must specify client name
@@ -340,11 +346,15 @@ Add(){
 }
 
 Client(){
-    [[ ! "$2" ]] && exit # must specify client name
-    ALIAS="$2"
-    WG="$3"
-    if ! grep -qi "Alias = $ALIAS" "/etc/wireguard/$WG.conf" ; then
-        Print "Client doesn't exist\\n" "red" && exit
+    if [ "$1" == "list" ]; then
+        WG="$2"
+    else
+        [[ ! "$2" ]] && exit # must specify client name
+        ALIAS="$2"
+        WG="$3"
+        if ! grep -qi "Alias = $ALIAS" "/etc/wireguard/$WG.conf" ; then
+            Print "Client doesn't exist\\n" "red" && exit
+        fi
     fi
 
     mapfile -t CLIENTS < <(grep -nE '\[Peer\]$|## CLIENT ##' "/etc/wireguard/$WG.conf" | cut -d ':' -f 1)
@@ -354,8 +364,16 @@ Client(){
         CLIENT_BLOCK=$(mktemp)
         sed -n "$START,$END p" /etc/wireguard/"$WG".conf > "$CLIENT_BLOCK"
 
-        if grep -qi "$ALIAS" "$CLIENT_BLOCK" ; then
-            PUBKEY=$(grep PublicKey "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+        PUBKEY=$(grep PublicKey "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+        if [ "$1" == list ]; then
+            ALIAS=$(grep Alias "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+            IP=$(grep AllowedIPs "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
+            if grep -qE "^# \[Peer\]" "$CLIENT_BLOCK"; then
+                Print "$ALIAS,$PUBKEY,$IP" "gray" | column -t -s, 2>/dev/null
+            else
+                Print "$ALIAS,$PUBKEY,$IP" "orange" | column -t -s, 2>/dev/null
+            fi
+        elif grep -qi "$ALIAS" "$CLIENT_BLOCK" ; then
             case "$1" in
             "show")
                 TMP=$(mktemp)
@@ -403,35 +421,12 @@ Client(){
                 sed -i -e "$START,$END s|^# ||g" "/etc/wireguard/$WG.conf"
                 ;;
             esac
-
-            rm -rf "$CLIENT_BLOCK"
+            
             wg set "$WG" peer "$PUBKEY" remove
             wg syncconf "$WG" <(wg-quick strip "$WG")
         fi
+        rm -rf "$CLIENT_BLOCK"
     done    
-}
-
-List(){
-    # List wg0
-    WG="$1"
-    mapfile -t CLIENTS < <(grep -nE '\[Peer\]$|## CLIENT ##' "/etc/wireguard/$WG.conf" | cut -d ':' -f 1)
-    for (( i=0;i<${#CLIENTS[@]}-1;i+=2 )); do 
-        START="${CLIENTS[$i]}"
-        END="${CLIENTS[(($i+1))]}"
-        CLIENT_BLOCK=$(mktemp)
-        sed -n "$START,$END p" /etc/wireguard/"$WG".conf > "$CLIENT_BLOCK"
-
-        ALIAS=$(grep Alias "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
-        PUBKEY=$(grep PublicKey "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
-        IP=$(grep AllowedIPs "$CLIENT_BLOCK" | cut -d '=' -f 2- | tr -d ' ')
-        if grep -qE "^# \[Peer\]" "$CLIENT_BLOCK"; then
-            Print "$ALIAS,$PUBKEY,$IP" "gray" | column -t -s, 2>/dev/null
-        else
-            Print "$ALIAS,$PUBKEY,$IP" "orange" | column -t -s, 2>/dev/null
-        fi
-    done
-
-    rm -rf "$CLIENT_BLOCK"
 }
 
 Run "$@"
