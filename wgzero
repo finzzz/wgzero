@@ -22,17 +22,17 @@ Run(){
         Install ;;
     "uninstall")
         # wgzero uninstall <wg_interface>
-        ReadInput "Uninstall $3" "y/N"
+        ReadInput "Uninstall $2" "y/N"
         if [ "$VAL" == "y" ]; then
-            wg-quick down "$VAL" 2>/dev/null
-            rm -rf "/etc/wireguard/$VAL.conf"
+            wg-quick down "$2"
+            rm -rf "/etc/wireguard/$2.conf"
         fi
         ;;
     "import")
         # wgzero import wg0.conf
         WG_INTERFACE=$(basename "$2" .conf)
         cp "$2" /etc/wireguard/
-        wg-quick up "$WG_INTERFACE" 2>/dev/null
+        wg-quick up "$WG_INTERFACE"
         systemctl enable wg-quick@"$WG_INTERFACE"
 
         Print "Done, make sure $(ReadConfig ListenPort "$WG")/UDP is open\\n" "red"
@@ -189,6 +189,7 @@ Install(){
         WriteConfig "IPv6 Prefix" "fd00::" "$WG"
         WriteConfig "IPv6 Subnet" "64" "$WG"
 
+        Interface=$(ReadConfig 'Interface' "$WG")
         IPv6Prefix=$(ReadConfig 'IPv6 Prefix' "$WG")
         IPv6Subnet=$(ReadConfig 'IPv6 Subnet' "$WG")
 
@@ -205,8 +206,10 @@ Install(){
                 CheckPackages ndppd
 
                 curl -so /etc/ndppd.conf "$TEMPLATEURL/ndppd.conf"
-                sed -i -e "s/IFACE/$IPv6Prefix/g" /etc/ndppd.conf
-                sed -i -e "s/PREFIX/$IPv6Subnet/g" /etc/ndppd.conf
+
+                sed -i -e "s/IFACE/$Interface/g" /etc/ndppd.conf
+                sed -i -e "s/PREFIX/$IPv6Prefix/g" /etc/ndppd.conf
+                
                 systemctl enable ndppd.service
                 systemctl restart ndppd.service
             fi
@@ -285,8 +288,8 @@ SetClientIPv4(){
 }
 
 SetClientIPv6(){
-    # SetClientIPv6 prefix
-    VAL="$1$(head -c 2 /dev/random | od -A n -t x2 | tr -d ' ')/128"
+    # SetClientIPv6 prefix subnet
+    VAL="$1$(head -c 2 /dev/random | od -A n -t x2 | tr -d ' ')/$2"
 }
 
 WriteClientConfig(){
@@ -325,7 +328,7 @@ Add(){
     if [ "$(ReadConfig Type "$WG")" != "v4" ]; then
         IPv6Prefix=$(ReadConfig 'IPv6 Prefix' "$WG")
         IPv6Subnet=$(ReadConfig 'IPv6 Subnet' "$WG")
-        SetClientIPv6 "$IPv6Prefix"
+        SetClientIPv6 "$IPv6Prefix" "$IPv6Subnet"
         ReadInput "Choose client IPv6" "$VAL"
         sed -i "s|AllowedIPs =.*|&,$VAL|g" "$TMP"
     fi
@@ -391,7 +394,7 @@ Client(){
                 WriteClientConfig AllowedIPs "0.0.0.0/0" "$TMP"
                 grep -qi '^# PresharedKey' "$CLIENT_BLOCK" || WriteClientConfig PresharedKey "$(ReadClientConfig PresharedKey "$CLIENT_BLOCK")" "$TMP" uncomment
                 KeepAlive=$(ReadConfig KeepAlive "$WG") && [ "$KeepAlive" != "unset" ] && WriteClientConfig PersistentKeepalive "$KeepAlive" "$TMP" uncomment
-                TYPE=$(ReadConfig Type "$WG") && [ "$TYPE" != "v4" ] && WriteClientConfig AllowedIPs "0.0.0.0/0,::/0"
+                TYPE=$(ReadConfig Type "$WG") && [ "$TYPE" != "v4" ] && WriteClientConfig AllowedIPs "0.0.0.0/0,::/0" "$TMP"
                 cat "$TMP" && echo "" && rm -rf "$TMP" "$CLIENT_BLOCK" && exit
                 ;;
             "delete")
