@@ -19,8 +19,7 @@ If you need IPv6, please make sure you can access internet using ipv6 before pro
 There are 2 types of connection:
 #### NAT
 - Internal IPv6 communication uses ULA (Unique Local Address).
-- Will prioritize on using public IPv6 (shared with all clients) and fallback to IPv4 when not available.
-- You need to have IPv6 address similar to `2001::a:b:c:d/64`.
+- Prioritize on using public IPv6 (shared with all clients) and fallback to IPv4 when not available.
 <details>
   <summary>see image</summary>
   <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
@@ -28,12 +27,10 @@ There are 2 types of connection:
 
 #### Full Routing
 - Assign unique public IPv6 to each clients.
-- I have tested this feature on Linode. Hetzner, and Vultr (need ndppd).
-- You need to have IPv6 address similar to `2001:a:b:c::/64`.
-    - notice the colons, it means that you can assign multiple addresses to clients.
-    - **(Recommended)** you can get free IPv6 block from tunnelbroker.net, /64 is enough.
-- **Make sure you don't assign those IP addresses to any interfaces.**  
-  Except with tunnelbroker default configuration.
+- You need to have an IPv6 address and a block of /64 IPv6 addresses.
+  - IPv6 address should be assigned to main interface and /64 is reserved for wireguard
+  - If you only get /64 from VPS provider, you need to split it into smaller blocks and install ndppd (see [example](docs/fr.md))
+  - If you don't have it, you can get free IPv6 from [Tunnelbroker](https://tunnelbroker.net/) (see [example]](docs/tunnelbroker.md))
 <details>
   <summary>see image</summary>
   <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
@@ -49,14 +46,15 @@ wgzero install
 ### Example Installation
 - [Plain IPv4](docs/v4.md)
 - [NAT](docs/nat.md)
-- [Full Routing](docs/fr.md)
-- [Full Routing with Tunnerbroker](docs/tunnelbroker.md)
+- Full Routing
+  - [only has /64 block](docs/fr.md)
+  - [Tunnerbroker](docs/tunnelbroker.md)
 
 ## Backup and restore
 Backup is simple, just save /etc/wireguard/<interface name>.conf. All of the data including clients are stored in that file.
 To restore, simply run `wgzero import <interface name>.conf` on new host.
 
-### Other Commands
+## Other Commands
 ```
 wgzero install
 wgzero uninstall <wg_interface>
@@ -70,3 +68,5 @@ wgzero enable clientname <wg_interface>
 wgzero disable clientname <wg_interface> 
 wgzero del clientname <wg_interface>
 ```
+
+## [FAQ and Troubleshooting](docs/faq.md)

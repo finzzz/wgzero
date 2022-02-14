@@ -327,8 +327,7 @@ Add(){
 
     if [ "$(ReadConfig Type "$WG")" != "v4" ]; then
         IPv6Prefix=$(ReadConfig 'IPv6 Prefix' "$WG")
-        IPv6Subnet=$(ReadConfig 'IPv6 Subnet' "$WG")
-        SetClientIPv6 "$IPv6Prefix" "$IPv6Subnet"
+        SetClientIPv6 "$IPv6Prefix" "128"
         ReadInput "Choose client IPv6" "$VAL"
         sed -i "s|AllowedIPs =.*|&,$VAL|g" "$TMP"
     fi
