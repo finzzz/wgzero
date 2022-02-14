@@ -54,3 +54,9 @@ ndppd.service is not a native service, redirecting to systemd-sysv-install.
 Executing: /lib/systemd/systemd-sysv-install enable ndppd
 Done, make sure 15173/UDP is open
 ```
+4. Checking from client
+```bash
+curl http://v4.ipv6-test.com/api/myip.php # ipv4 test
+curl http://v6.ipv6-test.com/api/myip.php # ipv6 test
+curl http://v4v6.ipv6-test.com/api/myip.php # dual stack, ipv6 means good to go
+```

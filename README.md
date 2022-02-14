@@ -4,8 +4,8 @@ CLI based wireguard server manager. Tested on Debian Bullseye.
 ## Features
 - Plain IPv4 installation with multiple interfaces
 - IPv6
-   - NAT
-   - Full routing
+  - NAT
+  - Full routing
 - Import & uninstall
 - Easy backup
 
@@ -21,17 +21,23 @@ There are 2 types of connection:
 - Internal IPv6 communication uses ULA (Unique Local Address).
 - Will prioritize on using public IPv6 (shared with all clients) and fallback to IPv4 when not available.
 - You need to have IPv6 address similar to `2001::a:b:c:d/64`.
-<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
+<details>
+  <summary>see image</summary>
+  <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/nat.jpg" width="500" height="300">
+</details>
 
 #### Full Routing
 - Assign unique public IPv6 to each clients.
-- I have tested this feature on Linode, [Hetzner, and Vultr (need ndppd)](#Full-IPv6-routing-on-Hetzner-and-Vultr).
+- I have tested this feature on Linode. Hetzner, and Vultr (need ndppd).
 - You need to have IPv6 address similar to `2001:a:b:c::/64`.
     - notice the colons, it means that you can assign multiple addresses to clients.
     - **(Recommended)** you can get free IPv6 block from tunnelbroker.net, /64 is enough.
 - **Make sure you don't assign those IP addresses to any interfaces.**  
   Except with tunnelbroker default configuration.
-<img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
+<details>
+  <summary>see image</summary>
+  <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
+</details>
 
 ## Installation
 ```bash
@@ -41,10 +47,14 @@ wgzero install
 ```
 
 ### Example Installation
-- [Plain IPv4]()
-- [NAT]()
-- [Full Routing]()
-- [Full Routing with Tunnerbroker]()
+- [Plain IPv4](docs/v4.md)
+- [NAT](docs/nat.md)
+- [Full Routing](docs/fr.md)
+- [Full Routing with Tunnerbroker](docs/tunnelbroker.md)
+
+## Backup and restore
+Backup is simple, just save /etc/wireguard/<interface name>.conf. All of the data including clients are stored in that file.
+To restore, simply run `wgzero import <interface name>.conf` on new host.
 
 ### Other Commands
 ```
