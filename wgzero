@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/0.3/template"
+TEMPLATEURL="https://raw.githubusercontent.com/finzzz/wgzero/master/template"
 
 GRAY="$(tput setaf 8)"
 RED="$(tput setaf 1)"
