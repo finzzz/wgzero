@@ -2,7 +2,8 @@
 CLI based wireguard server manager. Tested on Debian Bullseye.
 
 ## Features
-- Plain IPv4 installation with multiple interfaces
+- Plain IPv4 installation
+- Multi interfaces support
 - IPv6
   - NAT
   - Full routing
@@ -30,7 +31,7 @@ There are 2 types of connection:
 - You need to have an IPv6 address and a block of /64 IPv6 addresses.
   - IPv6 address should be assigned to main interface and /64 is reserved for wireguard
   - If you only get /64 from VPS provider, you need to split it into smaller blocks and install ndppd (see [example](docs/fr.md))
-  - If you don't have it, you can get free IPv6 from [Tunnelbroker](https://tunnelbroker.net/) (see [example]](docs/tunnelbroker.md))
+  - If you don't have it, you can get free IPv6 from [Tunnelbroker](https://tunnelbroker.net/) (see [example](docs/tunnelbroker.md))
 <details>
   <summary>see image</summary>
   <img src="https://raw.githubusercontent.com/finzzz/wgzero/master/static/fr.jpg" width="500" height="275">
@@ -51,7 +52,7 @@ wgzero install
   - [Tunnerbroker](docs/tunnelbroker.md)
 
 ## Backup and restore
-Backup is simple, just save /etc/wireguard/<interface name>.conf. All of the data including clients are stored in that file.
+Backup is simple, just save `/etc/wireguard/<interface name>.conf`. All of the data including clients are stored in that file.
 To restore, simply run `wgzero import <interface name>.conf` on new host.
 
 ## Other Commands
