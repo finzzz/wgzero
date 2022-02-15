@@ -12,7 +12,7 @@ CLI based wireguard server manager. Tested on Debian Bullseye.
 
 ## Requirements
 ### Packages
-[wireguard](https://www.wireguard.com/install/) curl qrencode iptables jq
+[wireguard](https://www.wireguard.com/install/) curl qrencode iptables jq bsdmainutils
 
 ### IPv6
 If you need IPv6, please make sure you can access internet using ipv6 before proceeding.
